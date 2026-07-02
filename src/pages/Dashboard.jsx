@@ -15,6 +15,7 @@ export default function Dashboard() {
     residentialNT2,
     guestHouseNT1,
     guestHouseNT2,
+    bookings,
     auditLog,
     updateResidential,
     clearLogs,
@@ -59,20 +60,55 @@ export default function Dashboard() {
 
   // Compute Guest House stats
   const guestStats = useMemo(() => {
-    const total = guestHouseNT1.length + guestHouseNT2.length
-    const occupied =
-      guestHouseNT1.filter((r) => r.status === 'Occupied').length +
-      guestHouseNT2.filter((r) => r.status === 'Occupied').length
-    const vacant = total - occupied
+    const allRooms = [...guestHouseNT1, ...guestHouseNT2]
+    const total = allRooms.length
+    
+    const available = allRooms.filter(r => r.status === 'Available').length
+    const reserved = allRooms.filter(r => r.status === 'Reserved').length
+    const occupied = allRooms.filter(r => r.status === 'Occupied').length
+    const cleaning = allRooms.filter(r => r.status === 'Under Cleaning').length
+    const maintenance = allRooms.filter(r => r.status === 'Maintenance').length
+    
     const pct = total > 0 ? Math.round((occupied / total) * 100) : 0
+
+    const todayStr = '2026-07-02'
+    
+    const checkInsToday = bookings.filter(
+      b => b.expectedCheckInDate === todayStr && b.bookingStatus === 'Reserved'
+    ).length
+
+    const checkOutsToday = bookings.filter(
+      b => b.expectedCheckOutDate === todayStr && (b.bookingStatus === 'Occupied' || b.actualCheckOutDateTime?.startsWith(todayStr))
+    ).length
+
+    const currentGuests = bookings.filter(
+      b => b.guestStatus === 'Checked In'
+    ).length
+
+    const upcomingArrivals = bookings.filter(
+      b => b.bookingStatus === 'Reserved' && b.expectedCheckInDate >= todayStr
+    ).length
+
+    const overstayingGuests = bookings.filter(
+      b => b.guestStatus === 'Checked In' && !b.actualCheckOutDateTime && b.expectedCheckOutDate < todayStr
+    ).length
 
     return {
       total,
       occupied,
-      vacant,
+      vacant: available,
+      available,
+      reserved,
+      cleaning,
+      maintenance,
       pct,
+      checkInsToday,
+      checkOutsToday,
+      currentGuests,
+      upcomingArrivals,
+      overstayingGuests
     }
-  }, [guestHouseNT1, guestHouseNT2])
+  }, [guestHouseNT1, guestHouseNT2, bookings])
 
   // Handle flat management from Map Modal
   const handleManageFlat = (buildingCode, roomNo) => {
@@ -219,6 +255,126 @@ export default function Dashboard() {
                 >
                   Manage Bookings
                 </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* Guest House Operations and Lifecycle Dashboard */}
+          <div className="mb-xl rounded-xl border border-outline-variant bg-surface-container-lowest p-gutter shadow-sm">
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-outline-variant/30 pb-4">
+              <div>
+                <h3 className="font-headline-sm text-headline-sm text-on-surface flex items-center gap-2">
+                  <Icon name="hotel" className="text-primary" /> Guest House Operations &amp; Booking Lifecycle
+                </h3>
+                <p className="text-xs text-secondary mt-0.5">
+                  Real-time status of rooms, active check-in queue, overstay alerts, and housekeeping releases.
+                </p>
+              </div>
+              <Link
+                to="/guest-houses/nt1"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-on-primary shadow-xs hover:bg-primary-container transition-all"
+              >
+                <Icon name="event_busy" className="text-sm" /> Manage Bookings &amp; Check-ins
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+              {/* Room Status Breakdown Cards */}
+              <div className="lg:col-span-7 space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-secondary">Rooms Status Inventory</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  <div className="rounded-lg border border-emerald-100 bg-[#f0fdf4] p-3 text-center transition-all hover:shadow-xs">
+                    <Icon name="check_circle" className="text-emerald-500 mb-1.5" />
+                    <span className="block text-[11px] font-bold text-emerald-800 uppercase tracking-wide">Available</span>
+                    <span className="text-2xl font-bold text-emerald-950 block mt-1">{guestStats.available}</span>
+                    <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">Clean &amp; Ready</span>
+                  </div>
+
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3 text-center transition-all hover:shadow-xs">
+                    <Icon name="pending" className="text-blue-500 mb-1.5" />
+                    <span className="block text-[11px] font-bold text-blue-800 uppercase tracking-wide">Reserved</span>
+                    <span className="text-2xl font-bold text-blue-950 block mt-1">{guestStats.reserved}</span>
+                    <span className="text-[10px] text-blue-600 font-semibold block mt-0.5">Upcoming Guests</span>
+                  </div>
+
+                  <div className="rounded-lg border border-red-100 bg-red-50/50 p-3 text-center transition-all hover:shadow-xs">
+                    <Icon name="meeting_room" className="text-red-500 mb-1.5" />
+                    <span className="block text-[11px] font-bold text-red-800 uppercase tracking-wide">Occupied</span>
+                    <span className="text-2xl font-bold text-red-950 block mt-1">{guestStats.occupied}</span>
+                    <span className="text-[10px] text-red-600 font-semibold block mt-0.5">Guests Staying</span>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3 text-center transition-all hover:shadow-xs">
+                    <Icon name="cleaning_services" className="text-amber-500 mb-1.5" />
+                    <span className="block text-[11px] font-bold text-amber-800 uppercase tracking-wide">Cleaning</span>
+                    <span className="text-2xl font-bold text-amber-950 block mt-1">{guestStats.cleaning}</span>
+                    <span className="text-[10px] text-amber-600 font-semibold block mt-0.5">Housekeeping</span>
+                  </div>
+
+                  <div className="rounded-lg border border-outline-variant/30 bg-surface-container p-3 text-center transition-all hover:shadow-xs">
+                    <Icon name="build" className="text-secondary mb-1.5" />
+                    <span className="block text-[11px] font-bold text-secondary uppercase tracking-wide">Maintenance</span>
+                    <span className="text-2xl font-bold text-on-surface block mt-1">{guestStats.maintenance}</span>
+                    <span className="text-[10px] text-outline font-semibold block mt-0.5">Needs Attention</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Guest Operations Summary */}
+              <div className="lg:col-span-5 border-t lg:border-t-0 lg:border-l border-outline-variant/30 pt-4 lg:pt-0 lg:pl-6 space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-secondary">Today's Lifecycle Schedule</h4>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-3 p-2.5 rounded-lg border border-outline-variant/20 bg-surface-bright">
+                    <div className="flex h-9 w-9 items-center justify-center rounded bg-primary-container/10 text-primary">
+                      <Icon name="login" className="text-sm" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-outline font-bold uppercase tracking-wide">Today's Check-ins</span>
+                      <span className="block text-lg font-bold text-on-surface">{guestStats.checkInsToday}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-2.5 rounded-lg border border-outline-variant/20 bg-surface-bright">
+                    <div className="flex h-9 w-9 items-center justify-center rounded bg-emerald-50 text-emerald-600">
+                      <Icon name="logout" className="text-sm" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-outline font-bold uppercase tracking-wide">Today's Check-outs</span>
+                      <span className="block text-lg font-bold text-on-surface">{guestStats.checkOutsToday}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-2.5 rounded-lg border border-outline-variant/20 bg-surface-bright">
+                    <div className="flex h-9 w-9 items-center justify-center rounded bg-blue-50 text-blue-600">
+                      <Icon name="groups" className="text-sm" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-outline font-bold uppercase tracking-wide">Current Guests</span>
+                      <span className="block text-lg font-bold text-on-surface">{guestStats.currentGuests}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-2.5 rounded-lg border border-outline-variant/20 bg-surface-bright">
+                    <div className="flex h-9 w-9 items-center justify-center rounded bg-amber-50 text-amber-600">
+                      <Icon name="pending_actions" className="text-sm" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-outline font-bold uppercase tracking-wide">Upcoming Arrivals</span>
+                      <span className="block text-lg font-bold text-on-surface">{guestStats.upcomingArrivals}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {guestStats.overstayingGuests > 0 && (
+                  <div className="flex items-center gap-3 p-3 rounded-lg border border-error/20 bg-error-container/20 text-error animate-pulse">
+                    <Icon name="warning" />
+                    <div>
+                      <span className="block text-[11px] font-bold uppercase tracking-wide">Overstay Warning</span>
+                      <span className="text-xs font-semibold">There are {guestStats.overstayingGuests} guest(s) currently overstaying expected checkout dates!</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

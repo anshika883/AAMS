@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon'
-
-const AVAILABLE_FURNITURE = ['Bed', 'AC', 'Study Table', 'Wardrobe', 'Chair']
+import { useAams } from '../lib/useAams'
 
 export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
+  const { furnitureLibrary, addFurniture } = useAams()
+
   const [residentName, setResidentName] = useState('')
   const [occupancy, setOccupancy] = useState('Vacant')
   const [selectedFurniture, setSelectedFurniture] = useState([])
+  const [furnitureInput, setFurnitureInput] = useState('')
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
   useEffect(() => {
     if (unit) {
       setResidentName(unit.residentName === '-' ? '' : unit.residentName)
       setOccupancy(unit.occupancy || 'Vacant')
+      setFurnitureInput('')
+      setIsDropdownOpen(false)
       
       const currentFurniture = unit.furniture && unit.furniture !== 'NIL'
         ? unit.furniture.split(',').map((f) => f.trim())
@@ -21,14 +26,6 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
   }, [unit])
 
   if (!isOpen || !unit) return null
-
-  const handleToggleFurniture = (item) => {
-    if (selectedFurniture.includes(item)) {
-      setSelectedFurniture(selectedFurniture.filter((f) => f !== item))
-    } else {
-      setSelectedFurniture([...selectedFurniture, item])
-    }
-  }
 
   const handleStatusChange = (status) => {
     setOccupancy(status)
@@ -120,32 +117,124 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
             </div>
           )}
 
-          {/* Furniture Selector */}
-          <div className="space-y-2">
-            <label className="text-label-sm uppercase tracking-wider text-secondary">Furniture Inventory</label>
-            <div className="flex flex-wrap gap-2 pt-1">
-              {AVAILABLE_FURNITURE.map((item) => {
-                const selected = selectedFurniture.includes(item)
-                return (
+          {/* Furniture Selector with Autocomplete */}
+          <div className="space-y-3 relative">
+            <label className="text-label-sm uppercase tracking-wider text-secondary block font-bold">
+              Furniture Inventory
+            </label>
+            
+            {/* Selected furniture tags */}
+            <div className="flex flex-wrap gap-1.5 p-1.5 border border-outline-variant/20 rounded-lg bg-surface-bright min-h-[50px]">
+              {selectedFurniture.map((item) => (
+                <span
+                  key={item}
+                  className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+                >
+                  {item}
                   <button
-                    key={item}
                     type="button"
-                    onClick={() => handleToggleFurniture(item)}
-                    className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-                      selected
-                        ? 'border-primary bg-primary text-white shadow-sm'
-                        : 'border-outline-variant hover:bg-surface-container-low text-secondary'
-                    }`}
+                    onClick={() => setSelectedFurniture(selectedFurniture.filter((f) => f !== item))}
+                    className="hover:text-error-container cursor-pointer text-xs font-bold ml-1.5"
                   >
-                    {selected && <Icon name="check" className="text-xs" />}
-                    {item}
+                    <Icon name="close" className="text-[10px]" />
                   </button>
-                )
-              })}
+                </span>
+              ))}
+              {selectedFurniture.length === 0 && (
+                <p className="text-xs italic text-outline self-center px-2 py-1">No furniture assigned (NIL)</p>
+              )}
             </div>
-            {selectedFurniture.length === 0 && (
-              <p className="text-xs italic text-outline mt-1">No furniture assigned (NIL)</p>
-            )}
+
+            {/* Autocomplete Input */}
+            <div className="relative">
+              <div className="flex gap-2">
+                <div className="relative flex-grow">
+                  <input
+                    type="text"
+                    placeholder="Type to search or add furniture..."
+                    value={furnitureInput}
+                    onChange={(e) => {
+                      setFurnitureInput(e.target.value)
+                      setIsDropdownOpen(true)
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-4 py-2.5 text-body-md focus:border-primary focus:outline-none"
+                  />
+                  {furnitureInput && (
+                    <button
+                      type="button"
+                      onClick={() => setFurnitureInput('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface cursor-pointer"
+                    >
+                      <Icon name="close" className="text-sm" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const trimmed = furnitureInput.trim()
+                    if (trimmed) {
+                      addFurniture(trimmed)
+                      if (!selectedFurniture.includes(trimmed)) {
+                        setSelectedFurniture([...selectedFurniture, trimmed])
+                      }
+                      setFurnitureInput('')
+                      setIsDropdownOpen(false)
+                    }
+                  }}
+                  className="rounded-lg bg-primary px-4 py-2.5 text-label-md font-bold text-on-primary hover:bg-primary-container transition-all cursor-pointer whitespace-nowrap"
+                >
+                  Add Custom
+                </button>
+              </div>
+
+              {/* Dropdown Options */}
+              {isDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
+                  <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-lowest shadow-lg py-1">
+                    {furnitureLibrary
+                      .filter(item => !selectedFurniture.includes(item) && item.toLowerCase().includes(furnitureInput.toLowerCase()))
+                      .map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => {
+                            setSelectedFurniture([...selectedFurniture, item])
+                            setFurnitureInput('')
+                            setIsDropdownOpen(false)
+                          }}
+                          className="w-full text-left px-4 py-2 text-body-md text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    {furnitureInput.trim() && !furnitureLibrary.some(item => item.toLowerCase() === furnitureInput.trim().toLowerCase()) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const trimmed = furnitureInput.trim()
+                          addFurniture(trimmed)
+                          if (!selectedFurniture.includes(trimmed)) {
+                            setSelectedFurniture([...selectedFurniture, trimmed])
+                          }
+                          setFurnitureInput('')
+                          setIsDropdownOpen(false)
+                        }}
+                        className="w-full text-left px-4 py-2 text-body-md text-primary font-bold hover:bg-surface-container transition-colors cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Icon name="add" className="text-sm" />
+                        Create new option "{furnitureInput.trim()}"
+                      </button>
+                    )}
+                    {furnitureLibrary.filter(item => !selectedFurniture.includes(item) && item.toLowerCase().includes(furnitureInput.toLowerCase())).length === 0 && !furnitureInput.trim() && (
+                      <div className="px-4 py-2 text-xs italic text-outline">All library items selected.</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant">
@@ -158,9 +247,9 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-primary px-5 py-2.5 text-label-md font-bold text-on-primary shadow-md transition-all hover:bg-primary-container"
+              className="rounded-lg bg-primary px-5 py-2.5 text-label-md font-bold text-on-primary shadow-md hover:bg-primary-container transition-colors"
             >
-              Save Changes
+              Save Details
             </button>
           </div>
         </form>

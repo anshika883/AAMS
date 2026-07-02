@@ -5,10 +5,23 @@ import Icon from '../../components/Icon'
 import { useAams } from '../../lib/useAams'
 
 export default function Settings() {
-  const { settings, lastSync, updateSystemSettings, refresh } = useAams()
+  const {
+    settings,
+    lastSync,
+    updateSystemSettings,
+    refresh,
+    furnitureLibrary,
+    addFurniture,
+    deleteFurniture,
+    renameFurniture,
+    getFurnitureUsage,
+  } = useAams()
 
   // Local state for tabs
   const [activeTab, setActiveTab] = useState('general')
+  const [newFurnitureName, setNewFurnitureName] = useState('')
+  const [editingFurnitureName, setEditingFurnitureName] = useState(null)
+  const [renamedFurnitureName, setRenamedFurnitureName] = useState('')
 
   // Form states initialized from central settings
   const [institutionName, setInstitutionName] = useState(settings.institutionName || 'AAMS National College')
@@ -86,6 +99,7 @@ export default function Settings() {
       localStorage.removeItem('aams_guest_rooms')
       localStorage.removeItem('aams_audit_log')
       localStorage.removeItem('aams_settings')
+      localStorage.removeItem('aams_furniture_library')
       
       // Reinitialize
       refresh()
@@ -162,6 +176,18 @@ export default function Settings() {
               >
                 <Icon name="database" />
                 Database &amp; Sync
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('furniture')}
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-label-md font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === 'furniture'
+                    ? 'bg-primary-container/10 text-primary'
+                    : 'text-secondary hover:bg-surface-container hover:text-on-surface'
+                }`}
+              >
+                <Icon name="chair" />
+                Furniture Library
               </button>
             </div>
 
@@ -458,6 +484,162 @@ export default function Settings() {
                       <Icon name="delete_forever" />
                       Wipe &amp; Reset Database
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {/* FURNITURE LIBRARY */}
+              {activeTab === 'furniture' && (
+                <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-gutter shadow-xs space-y-6">
+                  <div>
+                    <h3 className="text-headline-sm font-headline-sm text-on-surface mb-2 flex items-center gap-2">
+                      <Icon name="single_bed" className="text-primary" />
+                      Furniture Master Library
+                    </h3>
+                    <p className="text-body-md text-on-surface-variant">
+                      Create, rename, or delete furniture types. Changes will propagate instantly to all room assignments.
+                    </p>
+                  </div>
+
+                  {/* Add New Furniture Form */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const trimmed = newFurnitureName.trim()
+                      if (!trimmed) return
+                      if (furnitureLibrary.some(f => f.toLowerCase() === trimmed.toLowerCase())) {
+                        alert('A furniture item with this name already exists.')
+                        return
+                      }
+                      addFurniture(trimmed)
+                      setNewFurnitureName('')
+                      showToast(`"${trimmed}" added to furniture library.`)
+                    }}
+                    className="flex flex-col sm:flex-row gap-3 items-end bg-surface-container-low border border-outline-variant/30 p-4 rounded-lg"
+                  >
+                    <div className="flex-grow space-y-1 w-full">
+                      <label htmlFor="newFurniture" className="text-xs text-secondary font-bold uppercase">
+                        Add New Furniture Item
+                      </label>
+                      <input
+                        type="text"
+                        id="newFurniture"
+                        placeholder="e.g. Wardrobe, Study Table, Fan, Mattress"
+                        required
+                        value={newFurnitureName}
+                        onChange={(e) => setNewFurnitureName(e.target.value)}
+                        className="w-full rounded-lg border border-outline-variant bg-surface px-4 py-2 text-body-md focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-primary px-5 py-2.5 text-label-md font-bold text-on-primary shadow-sm hover:bg-primary-container transition-colors cursor-pointer w-full sm:w-auto whitespace-nowrap"
+                    >
+                      <Icon name="add" className="text-sm mr-1" /> Add Item
+                    </button>
+                  </form>
+
+                  {/* Furniture Library Table */}
+                  <div className="overflow-hidden rounded-lg border border-outline-variant">
+                    <table className="w-full border-collapse text-left text-body-md">
+                      <thead>
+                        <tr className="bg-surface-container-low border-b border-outline-variant text-secondary text-xs font-bold uppercase tracking-wider">
+                          <th className="px-4 py-3">Furniture Item Name</th>
+                          <th className="px-4 py-3 text-center">Active Assignments</th>
+                          <th className="px-4 py-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant/40 text-on-surface">
+                        {furnitureLibrary.map((item) => {
+                          const count = getFurnitureUsage(item)
+                          const isEditing = editingFurnitureName === item
+                          return (
+                            <tr key={item} className="hover:bg-surface-container-low/20 transition-colors">
+                              <td className="px-4 py-3 font-medium">
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    value={renamedFurnitureName}
+                                    onChange={(e) => setRenamedFurnitureName(e.target.value)}
+                                    className="rounded border border-primary bg-surface px-2.5 py-1 text-body-md focus:outline-none w-full max-w-xs"
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <span>{item}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center font-bold text-secondary">
+                                {count} {count === 1 ? 'room / flat' : 'rooms / flats'}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex justify-end gap-2">
+                                  {isEditing ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const trimmed = renamedFurnitureName.trim()
+                                          if (!trimmed) return
+                                          if (trimmed === item) {
+                                            setEditingFurnitureName(null)
+                                            return
+                                          }
+                                          if (furnitureLibrary.some(f => f.toLowerCase() === trimmed.toLowerCase() && f !== item)) {
+                                            alert('A furniture item with this name already exists.')
+                                            return
+                                          }
+                                          renameFurniture(item, trimmed)
+                                          setEditingFurnitureName(null)
+                                          showToast(`Renamed "${item}" to "${trimmed}".`)
+                                        }}
+                                        className="flex items-center gap-1 rounded bg-[#f0fdf4] border border-[#bbf7d0] px-2.5 py-1 text-xs font-bold text-[#15803d] hover:bg-[#dcfce7] transition-all cursor-pointer shadow-xs"
+                                      >
+                                        <Icon name="check" className="text-xs" /> Save
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingFurnitureName(null)}
+                                        className="flex items-center gap-1 rounded border border-outline-variant bg-white px-2.5 py-1 text-xs font-bold text-secondary hover:bg-surface-container transition-all cursor-pointer shadow-xs"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingFurnitureName(item)
+                                          setRenamedFurnitureName(item)
+                                        }}
+                                        className="flex items-center gap-1 rounded border border-outline-variant bg-white px-2.5 py-1 text-xs font-bold text-primary hover:bg-surface-container transition-all cursor-pointer shadow-xs"
+                                      >
+                                        <Icon name="edit" className="text-xs" /> Rename
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const warningText = count > 0 
+                                            ? `This furniture item is currently assigned to ${count} rooms/flats. Deleting it will remove it from those rooms permanently.\n\nAre you sure you want to permanently delete this furniture item? This action cannot be undone.`
+                                            : `Are you sure you want to permanently delete this furniture item? This action cannot be undone.`
+                                          if (confirm(warningText)) {
+                                            deleteFurniture(item)
+                                            showToast(`"${item}" deleted from furniture library.`)
+                                          }
+                                        }}
+                                        className="flex items-center gap-1 rounded bg-error/10 border border-error/25 px-2.5 py-1 text-xs font-bold text-error hover:bg-error/15 transition-all cursor-pointer shadow-xs"
+                                      >
+                                        <Icon name="delete" className="text-xs" /> Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}

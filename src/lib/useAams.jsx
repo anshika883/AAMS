@@ -10,6 +10,16 @@ import {
   clearAuditLog,
   getSettings,
   updateSettings,
+  getFurnitureLibrary,
+  addFurnitureToLibrary,
+  deleteFurnitureFromLibrary,
+  renameFurnitureInLibrary,
+  getFurnitureUsageCount,
+  getGuestHouseBookings,
+  createGuestHouseBooking,
+  checkInGuestHouseBooking,
+  checkOutGuestHouseBooking,
+  markRoomCleaned,
 } from './state'
 
 const AamsContext = createContext(null)
@@ -21,6 +31,8 @@ export function AamsProvider({ children }) {
   const [guestHouseNT2, setGuestHouseNT2] = useState([])
   const [auditLog, setAuditLog] = useState([])
   const [settings, setSettingsState] = useState({})
+  const [furnitureLibrary, setFurnitureLibrary] = useState([])
+  const [bookings, setBookings] = useState([])
   const [lastSync, setLastSync] = useState(new Date())
 
   // Force component re-read
@@ -32,6 +44,8 @@ export function AamsProvider({ children }) {
     setGuestHouseNT2(getGuestHouseRooms('NT2'))
     setAuditLog(getAuditLog())
     setSettingsState(getSettings())
+    setFurnitureLibrary(getFurnitureLibrary())
+    setBookings(getGuestHouseBookings())
     setLastSync(new Date())
   }
 
@@ -79,6 +93,45 @@ export function AamsProvider({ children }) {
     refresh()
   }
 
+  const addFurniture = (name) => {
+    addFurnitureToLibrary(name)
+    refresh()
+  }
+
+  const deleteFurniture = (name) => {
+    deleteFurnitureFromLibrary(name)
+    refresh()
+  }
+
+  const renameFurniture = (oldName, newName) => {
+    renameFurnitureInLibrary(oldName, newName)
+    refresh()
+  }
+
+  const getFurnitureUsage = (name) => {
+    return getFurnitureUsageCount(name)
+  }
+
+  const createBooking = (house, payload) => {
+    createGuestHouseBooking(house, payload)
+    refresh()
+  }
+
+  const checkInBooking = (house, bookingId) => {
+    checkInGuestHouseBooking(house, bookingId)
+    refresh()
+  }
+
+  const checkOutBooking = (house, bookingId) => {
+    checkOutGuestHouseBooking(house, bookingId)
+    refresh()
+  }
+
+  const markRoomClean = (house, roomNo) => {
+    markRoomCleaned(house, roomNo)
+    refresh()
+  }
+
   const value = {
     residentialNT1,
     residentialNT2,
@@ -86,6 +139,8 @@ export function AamsProvider({ children }) {
     guestHouseNT2,
     auditLog,
     settings,
+    furnitureLibrary,
+    bookings,
     lastSync,
     refresh,
     updateResidential,
@@ -93,6 +148,14 @@ export function AamsProvider({ children }) {
     addGuestRoom,
     updateSystemSettings,
     clearLogs,
+    addFurniture,
+    deleteFurniture,
+    renameFurniture,
+    getFurnitureUsage,
+    createBooking,
+    checkInBooking,
+    checkOutBooking,
+    markRoomClean,
   }
 
   return <AamsContext.Provider value={value}>{children}</AamsContext.Provider>

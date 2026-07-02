@@ -40,7 +40,6 @@ export default function Reports() {
       occPct,
       vacantCount,
       pendingRequests: 15,
-      assetValue: '$1.2M',
     }
   }, [residentialNT1, residentialNT2])
 
@@ -194,7 +193,7 @@ export default function Reports() {
     } else if (selected === 'pending') {
       exportToCsv('Pending_Requests_Report', ['id', 'user', 'type', 'date', 'priority'], reportRows)
     } else if (selected === 'furniture') {
-      exportToCsv('Furniture_Asset_Report', ['category', 'total', 'inUse', 'stock', 'condition'], reportRows)
+      exportToCsv('Furniture_Report', ['category', 'total', 'inUse', 'stock', 'condition'], reportRows)
     } else if (selected === 'custom') {
       const cols = customReportConfig?.columns || []
       const rows = reportRows.map((r) => {
@@ -280,7 +279,7 @@ export default function Reports() {
         </div>
 
         {/* Dynamic Metric cards */}
-        <div className="mb-xl grid grid-cols-1 gap-gutter md:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-xl grid grid-cols-1 gap-gutter md:grid-cols-2 lg:grid-cols-3">
           <div className="group relative cursor-pointer overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm transition-all hover:shadow-md">
             <div className="mb-md flex h-10 w-10 items-center justify-center rounded-lg bg-primary-container/10 text-primary">
               <Icon name="pie_chart" />
@@ -306,14 +305,6 @@ export default function Reports() {
             <h3 className="mb-1 font-label-md uppercase tracking-wider text-on-surface-variant text-[11px]">Pending Requests</h3>
             <p className="text-2xl font-bold text-on-surface">{kpis.pendingRequests} Requests</p>
             <div className="mt-2 text-[11px] font-semibold text-error">5 Critical priority</div>
-          </div>
-          <div className="group relative cursor-pointer overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm transition-all hover:shadow-md">
-            <div className="mb-md flex h-10 w-10 items-center justify-center rounded-lg bg-tertiary-container/10 text-tertiary">
-              <Icon name="inventory_2" />
-            </div>
-            <h3 className="mb-1 font-label-md uppercase tracking-wider text-on-surface-variant text-[11px]">Asset Value</h3>
-            <p className="text-2xl font-bold text-on-surface">{kpis.assetValue}</p>
-            <div className="mt-2 text-[11px] font-semibold text-on-surface-variant">Furniture &amp; Equipment</div>
           </div>
         </div>
 

@@ -1,42 +1,47 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import Page from '../../components/Page'
 import TopBar from '../../components/TopBar'
 import Icon from '../../components/Icon'
 import GuestRoomModal from '../../components/GuestRoomModal'
+import GuestBookingModal from '../../components/GuestBookingModal'
 import { IMAGES } from '../../constants/images'
 import { useAams } from '../../lib/useAams'
 import { exportToCsv } from '../../lib/export'
 
-function InventoryRow({ floor, roomNo, furniture, status, maintenance, onManage }) {
-  const isOccupied = status === 'Occupied'
-  const isMaintenance = maintenance === 'pending'
-  
-  // Style tags
-  const statusClass = isOccupied
-    ? 'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]'
-    : 'bg-primary-container/10 text-primary border-primary/20'
-  const dotClass = isOccupied ? 'bg-[#22c55e]' : 'bg-primary'
-
-  const actionIcon = isMaintenance ? 'warning' : (furniture.length === 0 ? 'add_circle' : 'edit')
-  const actionColor = isMaintenance ? 'text-error' : (furniture.length === 0 ? 'text-primary' : 'text-secondary')
+function InventoryRow({ floor, roomNo, furniture, status, activeBooking, onManage, onMarkClean }) {
+  let badgeStyle = ''
+  let dotColor = ''
+  if (status === 'Available') {
+    badgeStyle = 'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]'
+    dotColor = 'bg-[#22c55e]'
+  } else if (status === 'Reserved') {
+    badgeStyle = 'bg-blue-50 text-blue-700 border-blue-200'
+    dotColor = 'bg-blue-500'
+  } else if (status === 'Occupied') {
+    badgeStyle = 'bg-red-50 text-red-700 border-red-200'
+    dotColor = 'bg-red-500'
+  } else if (status === 'Under Cleaning') {
+    badgeStyle = 'bg-amber-50 text-amber-700 border-amber-200'
+    dotColor = 'bg-amber-500'
+  } else {
+    badgeStyle = 'bg-surface-container-high border-outline-variant text-secondary'
+    dotColor = 'bg-secondary'
+  }
 
   return (
     <tr className="transition-colors hover:bg-surface-container-low/30">
       <td className="px-lg py-4 text-body-md text-on-surface-variant">{floor}</td>
       <td className="px-lg py-4 text-body-md font-bold text-primary">{roomNo}</td>
       <td className="px-lg py-4">
-        {status && (
-          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold mr-3 ${statusClass}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
-            {status}
-          </span>
-        )}
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold mr-3 ${badgeStyle}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
+          {status}
+        </span>
         
-        {isMaintenance && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-error/30 bg-error-container/20 px-2 py-0.5 text-xs font-bold text-error mr-3">
-            <Icon name="warning" className="text-[10px]" />
-            Maintenance
+        {activeBooking && (
+          <span className="text-xs text-secondary font-medium">
+            Guest: <strong className="text-on-surface">{activeBooking.guestName}</strong>
           </span>
         )}
       </td>
@@ -57,14 +62,26 @@ function InventoryRow({ floor, roomNo, furniture, status, maintenance, onManage 
         )}
       </td>
       <td className="px-lg py-4 text-right">
-        <button
-          type="button"
-          onClick={onManage}
-          className={`rounded-full p-2 hover:bg-surface-container transition-colors cursor-pointer ${actionColor}`}
-          title="Manage Room Details"
-        >
-          <Icon name={actionIcon} className="text-[20px]" />
-        </button>
+        <div className="flex justify-end items-center gap-2">
+          {status === 'Under Cleaning' && (
+            <button
+              type="button"
+              onClick={onMarkClean}
+              className="flex items-center gap-1 rounded bg-[#f0fdf4] border border-[#bbf7d0] px-2.5 py-1 text-xs font-bold text-[#15803d] hover:bg-[#dcfce7] transition-all cursor-pointer shadow-xs"
+              title="Mark Room as Clean"
+            >
+              <Icon name="cleaning_services" className="text-xs" /> Mark Clean
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onManage}
+            className="rounded-full p-2 hover:bg-surface-container transition-colors cursor-pointer text-secondary"
+            title="Manage Room Details"
+          >
+            <Icon name="edit" className="text-[20px]" />
+          </button>
+        </div>
       </td>
     </tr>
   )
@@ -79,18 +96,26 @@ export default function GuestHouses() {
     guestHouseNT2,
     updateGuestHouse,
     addGuestRoom,
+    bookings,
+    createBooking,
+    checkInBooking,
+    checkOutBooking,
+    markRoomClean,
   } = useAams()
 
   // Local state
+  const [viewTab, setViewTab] = useState('rooms') // 'rooms' or 'bookings'
   const [searchTerm, setSearchTerm] = useState('')
   const [activeFloorFilter, setActiveFloorFilter] = useState('All')
   const [sortBy, setSortBy] = useState('asc')
   const [currentPage, setCurrentPage] = useState(1)
   
   // Modal states
-  const [modalOpen, setModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState('add')
+  const [roomModalOpen, setRoomModalOpen] = useState(false)
+  const [roomModalMode, setRoomModalMode] = useState('add')
   const [selectedRoom, setSelectedRoom] = useState(null)
+  
+  const [bookingModalOpen, setBookingModalOpen] = useState(false)
 
   const itemsPerPage = 5
 
@@ -99,41 +124,53 @@ export default function GuestHouses() {
     return code === 'NT2' ? guestHouseNT2 : guestHouseNT1
   }, [code, guestHouseNT1, guestHouseNT2])
 
+  // Get current active bookings mapped by room number for quick access
+  const roomToActiveBookingMap = useMemo(() => {
+    const map = {}
+    bookings
+      .filter((b) => b.houseCode === code && (b.bookingStatus === 'Occupied' || b.bookingStatus === 'Reserved'))
+      .forEach((b) => {
+        map[b.roomNo] = b
+      })
+    return map
+  }, [bookings, code])
+
   // Get unique floors for filter buttons
   const uniqueFloors = useMemo(() => {
     const list = rooms.map((r) => r.floor)
     const unique = Array.from(new Set(list))
-    // Simple sorting: Ground Floor, 1st, 2nd, 3rd, 4th
     const order = { 'Ground Floor': 0, '1st Floor': 1, '2nd Floor': 2, '3rd Floor': 3, '4th Floor': 4 }
     return unique.sort((a, b) => (order[a] ?? 9) - (order[b] ?? 9))
   }, [rooms])
 
-  // Dynamic calculations
+  // Dynamic calculations for Stats
   const stats = useMemo(() => {
     const total = rooms.length
     const occupied = rooms.filter((r) => r.status === 'Occupied').length
     const pct = total > 0 ? Math.round((occupied / total) * 100) : 0
-    const maintenanceCount = rooms.filter((r) => r.maintenance === 'pending').length
-    const floorsCount = uniqueFloors.length
+    
+    // Calculate cleaning rooms
+    const cleaningCount = rooms.filter((r) => r.status === 'Under Cleaning').length
+    
+    // Calculate maintenance rooms
+    const maintenanceCount = rooms.filter((r) => r.status === 'Maintenance').length
 
-    return { total, occupied, pct, maintenanceCount, floorsCount }
-  }, [rooms, uniqueFloors])
+    return { total, occupied, pct, cleaningCount, maintenanceCount }
+  }, [rooms])
 
   // Filter, sort, paginate rooms
   const processedRooms = useMemo(() => {
-    // 1. Search filter
     let list = rooms.filter((r) => {
+      const activeGuest = roomToActiveBookingMap[r.roomNo]?.guestName || ''
       const furnitureStr = r.furniture.join(' ')
-      const hay = `${r.floor} ${r.roomNo} ${r.status} ${r.maintenance} ${furnitureStr}`.toLowerCase()
+      const hay = `${r.floor} ${r.roomNo} ${r.status} ${furnitureStr} ${activeGuest}`.toLowerCase()
       return hay.includes(searchTerm.trim().toLowerCase())
     })
 
-    // 2. Floor filter
     if (activeFloorFilter !== 'All') {
       list = list.filter((r) => r.floor === activeFloorFilter)
     }
 
-    // 3. Sorting
     list.sort((a, b) => {
       if (sortBy === 'asc') {
         return a.roomNo.localeCompare(b.roomNo, undefined, { numeric: true, sensitivity: 'base' })
@@ -143,61 +180,124 @@ export default function GuestHouses() {
     })
 
     return list
-  }, [rooms, searchTerm, activeFloorFilter, sortBy])
+  }, [rooms, searchTerm, activeFloorFilter, sortBy, roomToActiveBookingMap])
 
-  // Paginated rooms
-  const paginatedRooms = useMemo(() => {
+  // Filtered and sorted bookings
+  const processedBookings = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    
+    let list = bookings
+      .filter((b) => b.houseCode === code)
+      .map((b) => {
+        const isOverstay = b.bookingStatus === 'Occupied' && !b.actualCheckOutDateTime && b.expectedCheckOutDate < todayStr
+        return { ...b, isOverstay }
+      })
+
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const q = searchTerm.trim().toLowerCase()
+      list = list.filter(
+        (b) =>
+          b.guestName.toLowerCase().includes(q) ||
+          b.roomNo.toLowerCase().includes(q) ||
+          b.bookingStatus.toLowerCase().includes(q) ||
+          b.guestStatus.toLowerCase().includes(q)
+      )
+    }
+
+    // Sort: Overstaying guests first, then active/reserved, then historical checkouts (by date descending)
+    list.sort((a, b) => {
+      if (a.isOverstay && !b.isOverstay) return -1
+      if (!a.isOverstay && b.isOverstay) return 1
+      
+      const statusWeight = { 'Occupied': 0, 'Reserved': 1, 'Checked Out': 2 }
+      const aWeight = statusWeight[a.bookingStatus] ?? 3
+      const bWeight = statusWeight[b.bookingStatus] ?? 3
+      if (aWeight !== bWeight) return aWeight - bWeight
+
+      return b.bookingDate.localeCompare(a.bookingDate)
+    })
+
+    return list
+  }, [bookings, code, searchTerm])
+
+  // Paginated dataset (Room or Bookings)
+  const paginatedRows = useMemo(() => {
+    const list = viewTab === 'rooms' ? processedRooms : processedBookings
     const start = (currentPage - 1) * itemsPerPage
-    return processedRooms.slice(start, start + itemsPerPage)
-  }, [processedRooms, currentPage])
+    return list.slice(start, start + itemsPerPage)
+  }, [viewTab, processedRooms, processedBookings, currentPage])
 
-  const totalPages = Math.ceil(processedRooms.length / itemsPerPage) || 1
+  const totalPages = useMemo(() => {
+    const list = viewTab === 'rooms' ? processedRooms : processedBookings
+    return Math.ceil(list.length / itemsPerPage) || 1
+  }, [viewTab, processedRooms, processedBookings])
 
   // Handle Export
   const handleExport = () => {
-    exportToCsv(
-      `${code}_Guest_House_Inventory`,
-      ['floor', 'roomNo', 'status', 'maintenance', 'furniture'],
-      rooms.map((r) => ({
-        ...r,
-        furniture: r.furniture.join(', ')
-      }))
-    )
-  }
-
-  // Handle opening modal for editing
-  const handleOpenEdit = (room) => {
-    setSelectedRoom(room)
-    setModalMode('edit')
-    setModalOpen(true)
-  }
-
-  // Handle opening modal for adding
-  const handleOpenAdd = () => {
-    setSelectedRoom(null)
-    setModalMode('add')
-    setModalOpen(true)
+    if (viewTab === 'rooms') {
+      exportToCsv(
+        `${code}_Guest_House_Rooms`,
+        ['floor', 'roomNo', 'status', 'furniture'],
+        rooms.map((r) => ({
+          ...r,
+          furniture: r.furniture.join(', ')
+        }))
+      )
+    } else {
+      exportToCsv(
+        `${code}_Guest_House_Bookings`,
+        ['id', 'roomNo', 'guestName', 'bookingStatus', 'guestStatus', 'expectedCheckInDate', 'expectedCheckOutDate', 'actualCheckInDateTime', 'actualCheckOutDateTime'],
+        bookings.filter(b => b.houseCode === code)
+      )
+    }
   }
 
   // Handle save from modal
   const handleSaveRoom = (payload) => {
-    if (modalMode === 'add') {
+    if (roomModalMode === 'add') {
       const res = addGuestRoom(code, payload)
       if (res && res.error) return res
-      setCurrentPage(1) // Go to page 1
+      setCurrentPage(1)
     } else {
       updateGuestHouse(code, payload.roomNo, {
         status: payload.status,
         maintenance: payload.maintenance,
         furniture: payload.furniture,
+        checkInStatus: payload.checkInStatus,
+        checkOutStatus: payload.checkOutStatus,
       })
     }
+  }
+
+  const handleSaveBooking = (payload) => {
+    createBooking(code, payload)
+    setViewTab('bookings')
+    setCurrentPage(1)
+  }
+
+  const handleCheckIn = (bookingId) => {
+    if (confirm('Are you sure you want to check in this guest?')) {
+      checkInBooking(code, bookingId)
+    }
+  }
+
+  const handleCheckOut = (bookingId) => {
+    if (confirm('Confirm Guest Check-out?')) {
+      checkOutBooking(code, bookingId)
+    }
+  }
+
+  const formatDateTime = (isoStr) => {
+    if (!isoStr) return '-'
+    const d = new Date(isoStr)
+    return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
   }
 
   return (
     <>
       <TopBar
-        searchPlaceholder="Search rooms or facilities..."
+        searchPlaceholder={viewTab === 'rooms' ? "Search rooms or furniture..." : "Search bookings or guests..."}
         searchValue={searchTerm}
         onSearchChange={(e) => {
           setSearchTerm(e.target.value)
@@ -221,7 +321,7 @@ export default function GuestHouses() {
               </div>
               <h2 className="font-headline-lg text-headline-lg text-on-surface">{code} Guest House</h2>
               <p className="mt-1 text-body-md text-secondary">
-                Manage room inventory, furniture tracking, and floor assignments.
+                Manage room availability, automated check-in/out workflows, and cleaning matrices.
               </p>
             </div>
 
@@ -232,16 +332,32 @@ export default function GuestHouses() {
                 className="flex items-center gap-2 rounded-lg border border-outline-variant bg-white px-4 py-2.5 text-label-md font-bold text-on-surface hover:bg-surface-container transition-all cursor-pointer shadow-sm"
               >
                 <Icon name="download" className="text-[20px]" />
-                Export List
+                Export CSV
               </button>
-              <button
-                type="button"
-                onClick={handleOpenAdd}
-                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-label-md font-bold text-on-primary shadow-md hover:bg-primary-container transition-all cursor-pointer"
-              >
-                <Icon name="add_home" className="text-[20px]" />
-                Add New Room
-              </button>
+              
+              {viewTab === 'rooms' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRoom(null)
+                    setRoomModalMode('add')
+                    setRoomModalOpen(true)
+                  }}
+                  className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-label-md font-bold text-on-primary shadow-md hover:bg-primary-container transition-all cursor-pointer"
+                >
+                  <Icon name="add_home" className="text-[20px]" />
+                  Add New Room
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setBookingModalOpen(true)}
+                  className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-label-md font-bold text-on-primary shadow-md hover:bg-primary-container transition-all cursor-pointer"
+                >
+                  <Icon name="bookmark_add" className="text-[20px]" />
+                  Create Booking
+                </button>
+              )}
             </div>
           </div>
 
@@ -251,7 +367,7 @@ export default function GuestHouses() {
               <span className="text-label-sm text-secondary font-semibold uppercase tracking-wider">Total Rooms</span>
               <div className="flex items-end justify-between">
                 <span className="text-headline-md font-headline-md text-on-surface">{stats.total}</span>
-                <span className="text-xs text-primary font-bold">G to 4th Floor</span>
+                <span className="text-xs text-primary font-bold">{rooms.filter(r => r.status === 'Available').length} Available</span>
               </div>
             </div>
             <div className="flex flex-col gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm">
@@ -264,126 +380,281 @@ export default function GuestHouses() {
               </div>
             </div>
             <div className="flex flex-col gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm">
-              <span className="text-label-sm text-secondary font-semibold uppercase tracking-wider">Maintenance Log</span>
+              <span className="text-label-sm text-secondary font-semibold uppercase tracking-wider">Housekeeping</span>
               <div className="flex items-end justify-between">
-                <span className={`text-headline-md font-headline-md ${stats.maintenanceCount > 0 ? 'text-error font-bold' : 'text-on-surface'}`}>
-                  {stats.maintenanceCount}
+                <span className={`text-headline-md font-headline-md ${stats.cleaningCount > 0 ? 'text-amber-500 font-bold' : 'text-on-surface'}`}>
+                  {stats.cleaningCount}
                 </span>
-                {stats.maintenanceCount > 0 ? (
-                  <span className="rounded bg-error-container/20 px-2 py-0.5 text-xs font-bold text-error border border-error/20">
-                    Action Required
+                {stats.cleaningCount > 0 ? (
+                  <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 border border-amber-200">
+                    Needs Cleaning
                   </span>
                 ) : (
                   <span className="rounded bg-[#f0fdf4] px-2 py-0.5 text-xs font-bold text-[#166534] border border-[#bbf7d0]">
-                    Functional
+                    Clean
                   </span>
                 )}
               </div>
             </div>
             <div className="flex flex-col gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm">
-              <span className="text-label-sm text-secondary font-semibold uppercase tracking-wider">Total Floors</span>
+              <span className="text-label-sm text-secondary font-semibold uppercase tracking-wider">Maintenance Log</span>
               <div className="flex items-end justify-between">
-                <span className="text-headline-md font-headline-md text-on-surface">{stats.floorsCount}</span>
-                <span className="text-xs text-secondary font-bold">Active Floors</span>
+                <span className={`text-headline-md font-headline-md ${stats.maintenanceCount > 0 ? 'text-error font-bold' : 'text-on-surface'}`}>
+                  {stats.maintenanceCount}
+                </span>
+                <span className="text-xs text-secondary font-bold">Needs attention</span>
               </div>
             </div>
           </div>
 
-          {/* Matrix table container */}
+          {/* Sub Navigation Page-Level Tabs */}
+          <div className="flex border-b border-outline-variant gap-6 mb-2">
+            <button
+              type="button"
+              onClick={() => {
+                setViewTab('rooms')
+                setCurrentPage(1)
+              }}
+              className={`flex items-center gap-2 pb-3 text-label-md font-bold transition-all cursor-pointer border-b-2 ${
+                viewTab === 'rooms'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-secondary hover:text-on-surface'
+              }`}
+            >
+              <Icon name="grid_view" className="text-[18px]" />
+              Rooms Matrix
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewTab('bookings')
+                setCurrentPage(1)
+              }}
+              className={`flex items-center gap-2 pb-3 text-label-md font-bold transition-all cursor-pointer border-b-2 ${
+                viewTab === 'bookings'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-secondary hover:text-on-surface'
+              }`}
+            >
+              <Icon name="menu_book" className="text-[18px]" />
+              Bookings &amp; Guest Lifecycle Log
+            </button>
+          </div>
+
+          {/* Matrix / Bookings log table container */}
           <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
-            <div className="flex flex-col gap-4 border-b border-outline-variant bg-surface-container-low/20 px-lg py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-3">
-                <h3 className="font-headline-sm text-headline-sm text-on-surface mr-3">Inventory Matrix</h3>
-                <div className="flex flex-wrap rounded-lg bg-surface-container p-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveFloorFilter('All')
-                      setCurrentPage(1)
-                    }}
-                    className={`rounded-md px-3.5 py-1 text-xs font-bold transition-all cursor-pointer ${
-                      activeFloorFilter === 'All'
-                        ? 'bg-white text-primary shadow-sm'
-                        : 'text-secondary hover:text-on-surface'
-                    }`}
-                  >
-                    All Floors
-                  </button>
-                  {uniqueFloors.map((floorName) => (
-                    <button
-                      key={floorName}
-                      type="button"
-                      onClick={() => {
-                        setActiveFloorFilter(floorName)
+            {viewTab === 'rooms' ? (
+              <>
+                <div className="flex flex-col gap-4 border-b border-outline-variant bg-surface-container-low/20 px-lg py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="font-headline-sm text-headline-sm text-on-surface mr-3">Inventory Matrix</h3>
+                    <div className="flex flex-wrap rounded-lg bg-surface-container p-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveFloorFilter('All')
+                          setCurrentPage(1)
+                        }}
+                        className={`rounded-md px-3.5 py-1 text-xs font-bold transition-all cursor-pointer ${
+                          activeFloorFilter === 'All'
+                            ? 'bg-white text-primary shadow-sm'
+                            : 'text-secondary hover:text-on-surface'
+                        }`}
+                      >
+                        All Floors
+                      </button>
+                      {uniqueFloors.map((floorName) => (
+                        <button
+                          key={floorName}
+                          type="button"
+                          onClick={() => {
+                            setActiveFloorFilter(floorName)
+                            setCurrentPage(1)
+                          }}
+                          className={`rounded-md px-3.5 py-1 text-xs font-bold transition-all cursor-pointer ${
+                            activeFloorFilter === floorName
+                              ? 'bg-white text-primary shadow-sm'
+                              : 'text-secondary hover:text-on-surface'
+                          }`}
+                        >
+                          {floorName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-label-sm text-secondary font-semibold">Sort by Room No:</span>
+                    <select
+                      value={sortBy}
+                      onChange={(e) => {
+                        setSortBy(e.target.value)
                         setCurrentPage(1)
                       }}
-                      className={`rounded-md px-3.5 py-1 text-xs font-bold transition-all cursor-pointer ${
-                        activeFloorFilter === floorName
-                          ? 'bg-white text-primary shadow-sm'
-                          : 'text-secondary hover:text-on-surface'
-                      }`}
+                      className="cursor-pointer border border-outline-variant rounded-md bg-white px-2 py-1 text-xs font-bold text-on-surface focus:outline-none"
                     >
-                      {floorName}
-                    </button>
-                  ))}
+                      <option value="asc">Ascending (101 → 402)</option>
+                      <option value="desc">Descending (402 → 101)</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-label-sm text-secondary font-semibold">Sort by Room No:</span>
-                <select
-                  value={sortBy}
-                  onChange={(e) => {
-                    setSortBy(e.target.value)
-                    setCurrentPage(1)
-                  }}
-                  className="cursor-pointer border border-outline-variant rounded-md bg-white px-2 py-1 text-xs font-bold text-on-surface focus:outline-none"
-                >
-                  <option value="asc">Ascending (101 → 402)</option>
-                  <option value="desc">Descending (402 → 101)</option>
-                </select>
-              </div>
-            </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-surface-container-low/10">
+                        <th className="border-b border-outline-variant px-lg py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Floor No.</th>
+                        <th className="border-b border-outline-variant px-lg py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Room No.</th>
+                        <th className="border-b border-outline-variant px-lg py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Room Status &amp; Guest</th>
+                        <th className="border-b border-outline-variant px-lg py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Furniture Inventory</th>
+                        <th className="border-b border-outline-variant px-lg py-4 text-right text-xs font-bold uppercase tracking-wider text-secondary">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant">
+                      {paginatedRows.map((r) => (
+                        <InventoryRow
+                          key={r.roomNo}
+                          floor={r.floor}
+                          roomNo={r.roomNo}
+                          furniture={r.furniture}
+                          status={r.status}
+                          activeBooking={roomToActiveBookingMap[r.roomNo]}
+                          onMarkClean={() => markRoomClean(code, r.roomNo)}
+                          onManage={() => {
+                            setSelectedRoom(r)
+                            setRoomModalMode('edit')
+                            setRoomModalOpen(true)
+                          }}
+                        />
+                      ))}
 
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-surface-container-low/10">
-                    <th className="border-b border-outline-variant px-lg py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Floor No.</th>
-                    <th className="border-b border-outline-variant px-lg py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Room No.</th>
-                    <th className="border-b border-outline-variant px-lg py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Status &amp; Alert</th>
-                    <th className="border-b border-outline-variant px-lg py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Furniture Inventory</th>
-                    <th className="border-b border-outline-variant px-lg py-4 text-right text-xs font-bold uppercase tracking-wider text-secondary">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant">
-                  {paginatedRooms.map((r) => (
-                    <InventoryRow
-                      key={r.roomNo}
-                      floor={r.floor}
-                      roomNo={r.roomNo}
-                      furniture={r.furniture}
-                      status={r.status}
-                      maintenance={r.maintenance}
-                      onManage={() => handleOpenEdit(r)}
-                    />
-                  ))}
+                      {paginatedRows.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-lg py-12 text-center text-outline italic">
+                            No guest rooms match the filters.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Bookings log tab content */}
+                <div className="flex flex-col gap-4 border-b border-outline-variant bg-surface-container-low/20 px-lg py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="font-headline-sm text-headline-sm text-on-surface mr-3">Guest Lifecycle Log</h3>
+                    <p className="text-xs text-secondary mt-0.5">Manage live bookings, check-in guests, perform check-out releases, and review audit history.</p>
+                  </div>
+                </div>
 
-                  {paginatedRooms.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-lg py-12 text-center text-outline italic">
-                        No guest rooms match the filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-surface-container-low/10">
+                        <th className="border-b border-outline-variant px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Room No</th>
+                        <th className="border-b border-outline-variant px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Guest Name</th>
+                        <th className="border-b border-outline-variant px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Booking Status</th>
+                        <th className="border-b border-outline-variant px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Guest Status</th>
+                        <th className="border-b border-outline-variant px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary text-center">Expected Dates</th>
+                        <th className="border-b border-outline-variant px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Actual Check-in</th>
+                        <th className="border-b border-outline-variant px-4 py-4 text-left text-xs font-bold uppercase tracking-wider text-secondary">Actual Check-out</th>
+                        <th className="border-b border-outline-variant px-4 py-4 text-right text-xs font-bold uppercase tracking-wider text-secondary">Check-in / Check-out</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant">
+                      {paginatedRows.map((b) => {
+                        let statusColor = ''
+                        if (b.bookingStatus === 'Occupied') statusColor = 'bg-red-50 text-red-700 border-red-200'
+                        else if (b.bookingStatus === 'Reserved') statusColor = 'bg-blue-50 text-blue-700 border-blue-200'
+                        else statusColor = 'bg-surface-container-high border-outline-variant text-secondary'
 
-            {/* Pagination */}
+                        return (
+                          <tr key={b.id} className="transition-colors hover:bg-surface-container-low/30 text-body-md">
+                            <td className="px-4 py-4 font-bold text-primary">{b.roomNo}</td>
+                            <td className="px-4 py-4 font-semibold text-on-surface">
+                              <span className="block">{b.guestName}</span>
+                              <span className="text-[10px] text-outline font-medium">ID: {b.id}</span>
+                            </td>
+                            <td className="px-4 py-4">
+                              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-bold ${statusColor}`}>
+                                {b.bookingStatus}
+                              </span>
+                              {b.isOverstay && (
+                                <span className="block mt-1 text-[10px] text-error font-bold animate-pulse flex items-center gap-0.5">
+                                  <Icon name="warning" className="text-[11px]" /> Guest Overstayed
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-4">
+                              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold ${
+                                b.guestStatus === 'Checked In' 
+                                  ? 'bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]'
+                                  : b.guestStatus === 'Checked Out'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-surface-container-high border-outline-variant text-secondary'
+                              }`}>
+                                {b.guestStatus}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-xs text-secondary font-medium text-center">
+                              <span className="block">{b.expectedCheckInDate}</span>
+                              <span className="block text-[10px] text-outline">to</span>
+                              <span className={`block font-bold ${b.isOverstay ? 'text-error' : ''}`}>{b.expectedCheckOutDate}</span>
+                            </td>
+                            <td className="px-4 py-4 text-xs font-medium text-on-surface-variant">
+                              {formatDateTime(b.actualCheckInDateTime)}
+                            </td>
+                            <td className="px-4 py-4 text-xs font-medium text-on-surface-variant">
+                              {formatDateTime(b.actualCheckOutDateTime)}
+                            </td>
+                            <td className="px-4 py-4 text-right">
+                              <div className="flex justify-end gap-2">
+                                {b.bookingStatus === 'Reserved' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckIn(b.id)}
+                                    className="flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-xs font-bold text-on-primary shadow-xs hover:bg-primary-container transition-all cursor-pointer"
+                                  >
+                                    <Icon name="login" className="text-xs" /> Check In
+                                  </button>
+                                )}
+                                {b.bookingStatus === 'Occupied' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckOut(b.id)}
+                                    className="flex items-center gap-1.5 rounded bg-[#f0fdf4] border border-[#bbf7d0] px-3 py-1.5 text-xs font-bold text-[#15803d] shadow-xs hover:bg-[#dcfce7] transition-all cursor-pointer"
+                                  >
+                                    <Icon name="logout" className="text-xs" /> Check Out
+                                  </button>
+                                )}
+                                {b.bookingStatus === 'Checked Out' && (
+                                  <span className="text-xs text-outline italic font-medium pr-2">Released</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+
+                      {paginatedRows.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="px-lg py-12 text-center text-outline italic">
+                            No bookings match the filters.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Pagination controls */}
             <div className="flex items-center justify-between border-t border-outline-variant bg-surface-container-low/15 px-lg py-4">
               <p className="text-label-sm text-secondary font-semibold">
-                Showing {paginatedRooms.length} of {processedRooms.length} matching rooms
+                Showing {paginatedRows.length} of {viewTab === 'rooms' ? processedRooms.length : processedBookings.length} matching rows
               </p>
               <div className="flex items-center gap-1.5">
                 <button
@@ -436,11 +707,19 @@ export default function GuestHouses() {
 
       {/* Guest Room Modal (Add / Edit) */}
       <GuestRoomModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        isOpen={roomModalOpen}
+        onClose={() => setRoomModalOpen(false)}
         room={selectedRoom}
-        mode={modalMode}
+        mode={roomModalMode}
         onSave={handleSaveRoom}
+      />
+
+      {/* Guest Booking Modal */}
+      <GuestBookingModal
+        isOpen={bookingModalOpen}
+        onClose={() => setBookingModalOpen(false)}
+        rooms={rooms}
+        onSave={handleSaveBooking}
       />
     </>
   )

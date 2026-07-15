@@ -17,6 +17,7 @@ const navItems = [
   },
   { key: 'reports', label: 'Reports', icon: 'assessment', to: '/reports' },
   { key: 'money', label: 'Money Management', icon: 'payments', to: '/money' },
+  { key: 'assets', label: 'Asset Management', icon: 'chair', to: '/assets' },
   {
     key: 'guesthouses',
     label: 'Guest Houses',

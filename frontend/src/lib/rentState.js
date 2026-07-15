@@ -32,8 +32,16 @@ export function saveCustomRentRate(buildingCode, roomNo, residentName, rentRate)
 
 // ─── Resident Rent Records ──────────────────────────────────────────────────
 // Each record: { id, buildingCode, roomNo, residentName, rentAmount, month, year,
-//               amountPaid, paidDate, paymentMode, notes, status }
+//               amountPaid, paidDate, paymentMode, notes, status,
+//               unitsUsed, electricityBill, electricityBillPaid }
 // status: 'Paid' | 'Partial' | 'Unpaid' | 'Carry-Forward'
+//
+// unitsUsed is entered per resident, per month, directly in the Residential
+// Rent table. electricityBill is always derived (unitsUsed × ₹10/unit) so it
+// can't drift from unitsUsed. electricityBillPaid is a separate flag from the
+// rent payment status.
+
+const ELECTRICITY_RATE_PER_UNIT = 10
 
 export function getRentRecords() {
   return getJson('aams_rent_records', [])
@@ -81,12 +89,20 @@ export function upsertRentRecord(payload) {
       r.month === month &&
       r.year === year
   )
+  const existing = existingIdx >= 0 ? records[existingIdx] : null
+
+  // unitsUsed / electricityBillPaid are edited inline in the Residential Rent
+  // table (via upsertRentElectricityFields), not through this payment form —
+  // carry them forward untouched.
+  const unitsUsed = existing ? existing.unitsUsed || 0 : 0
+  const electricityBillPaid = existing ? existing.electricityBillPaid || false : false
+  const electricityBill = unitsUsed * ELECTRICITY_RATE_PER_UNIT
 
   const totalDue = rentAmount + carryForwardAmount
-  const balance = totalDue - amountPaid // positive = resident owes, negative = management owes
+  const balance = rentAmount + electricityBill // Monthly Rent + Electricity Bill
 
   const record = {
-    id: existingIdx >= 0 ? records[existingIdx].id : `RENT-${Date.now()}`,
+    id: existing ? existing.id : `RENT-${Date.now()}`,
     buildingCode,
     roomNo,
     residentName,
@@ -97,9 +113,71 @@ export function upsertRentRecord(payload) {
     totalDue,
     amountPaid,
     balance,
+    unitsUsed,
+    electricityBill,
+    electricityBillPaid,
     paidDate: paidDate || null,
     notes: notes || '',
     status,
+    updatedAt: new Date().toISOString(),
+  }
+
+  if (existingIdx >= 0) {
+    records[existingIdx] = record
+  } else {
+    records.unshift(record)
+  }
+
+  setJson('aams_rent_records', records)
+  return record
+}
+
+/**
+ * Patch just the electricity-related fields (unitsUsed and/or
+ * electricityBillPaid) for a resident's month, creating a minimal record if
+ * one doesn't exist yet. Recomputes electricityBill and Balance so they never
+ * drift from unitsUsed.
+ */
+export function upsertRentElectricityFields(buildingCode, roomNo, residentName, month, year, fields) {
+  const records = getRentRecords()
+  const existingIdx = records.findIndex(
+    (r) =>
+      r.buildingCode === buildingCode &&
+      r.roomNo === roomNo &&
+      r.month === month &&
+      r.year === year
+  )
+  const existing = existingIdx >= 0 ? records[existingIdx] : null
+
+  const base = existing || {
+    id: `RENT-${Date.now()}`,
+    buildingCode,
+    roomNo,
+    residentName,
+    month,
+    year,
+    rentAmount: 0,
+    carryForwardAmount: 0,
+    totalDue: 0,
+    amountPaid: 0,
+    status: 'Unpaid',
+    notes: '',
+    paidDate: null,
+    unitsUsed: 0,
+    electricityBillPaid: false,
+  }
+
+  const unitsUsed = fields.unitsUsed !== undefined ? Math.max(0, parseFloat(fields.unitsUsed) || 0) : base.unitsUsed || 0
+  const electricityBillPaid = fields.electricityBillPaid !== undefined ? fields.electricityBillPaid : base.electricityBillPaid || false
+  const electricityBill = unitsUsed * ELECTRICITY_RATE_PER_UNIT
+  const balance = (base.rentAmount || 0) + electricityBill // Monthly Rent + Electricity Bill
+
+  const record = {
+    ...base,
+    unitsUsed,
+    electricityBill,
+    electricityBillPaid,
+    balance,
     updatedAt: new Date().toISOString(),
   }
 

@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { parseFurnitureText, formatFurnitureItems } from './furnitureParsing'
 
 /**
  * Parses AAMS residential occupancy and furniture Excel sheet.
@@ -258,22 +259,22 @@ function parseCount(val) {
 
 /**
  * Build a combined furniture string from all sources.
- * Preserves bracket annotations like (RPS), (Metal), (NCO).
- * Splits on commas carefully, avoiding splitting inside parentheses.
+ *
+ * The real export packs furniture into a single "Category: detail;
+ * Category: detail" cell (e.g. "AC/Electrical: 1AC,gey; Bed/Other: 6x4 -2
+ * beds; Sofa; Dining Table (2)") — parseFurnitureText understands that
+ * shape and classifies bed/table entries by size when the text gives one.
+ * Plain comma lists (older/simpler sheets) still work via its fallback.
  */
 function buildFurnitureString(furnFix, bedsDetail, doctorFurnItems, allFurnitureSet) {
-  const allParts = []
+  const items = []
 
-  // Parse furnFix (appliances column) — e.g. "1AC(RPS),1Gey,WM,Fridge"
   if (furnFix && furnFix !== '_' && furnFix.toLowerCase() !== 'nil') {
-    const items = smartSplit(furnFix)
-    allParts.push(...items)
+    items.push(...parseFurnitureText(furnFix))
   }
 
-  // Parse bedsDetail — e.g. "6x4 - 2beds(RPS)", "Doctor furniture"
   if (bedsDetail && bedsDetail !== '_' && bedsDetail.toLowerCase() !== 'nil') {
-    const items = smartSplit(bedsDetail)
-    allParts.push(...items)
+    items.push(...parseFurnitureText(bedsDetail))
   }
 
   // Add Doctor furniture individual items — these can be names ("sofa") or counts (1)
@@ -281,54 +282,14 @@ function buildFurnitureString(furnFix, bedsDetail, doctorFurnItems, allFurniture
     const s = String(item).trim()
     // If it's a pure number, skip (it's a quantity reference for a named column header)
     if (/^\d+$/.test(s)) continue
-    allParts.push(s)
+    if (s.toLowerCase() === 'nil' || s.toLowerCase() === 'vacant' || s === '-') continue
+    items.push({ name: s, qty: 1 })
   }
 
-  // Clean and collect into the furniture library set
-  const cleaned = allParts
-    .map(p => p.trim())
-    .filter(p => {
-      if (!p) return false
-      const lower = p.toLowerCase()
-      return lower !== 'nil' && lower !== '_' && lower !== 'vacant' && p !== '-'
-    })
-
-  // Add each to the global set for the furniture library
-  for (const item of cleaned) {
-    allFurnitureSet.add(item)
+  // Add each distinct name to the global set for the furniture library
+  for (const item of items) {
+    allFurnitureSet.add(item.name)
   }
 
-  return cleaned.length > 0 ? cleaned.join(', ') : 'NIL'
-}
-
-/**
- * Split a string by commas, but NOT inside parentheses.
- * This preserves items like "Fridge(Alongwith transplant)" or "table (RPS)" as single tokens.
- */
-function smartSplit(str) {
-  const results = []
-  let current = ''
-  let depth = 0
-
-  for (let i = 0; i < str.length; i++) {
-    const ch = str[i]
-    if (ch === '(') {
-      depth++
-      current += ch
-    } else if (ch === ')') {
-      depth = Math.max(0, depth - 1)
-      current += ch
-    } else if (ch === ',' && depth === 0) {
-      const trimmed = current.trim()
-      if (trimmed) results.push(trimmed)
-      current = ''
-    } else {
-      current += ch
-    }
-  }
-
-  const trimmed = current.trim()
-  if (trimmed) results.push(trimmed)
-
-  return results
+  return formatFurnitureItems(items)
 }

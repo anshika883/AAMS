@@ -5,6 +5,7 @@ import Reports from './pages/Reports'
 import BuildingInventory from './pages/residential/BuildingInventory'
 import GuestHouses from './pages/guestHouses/GuestHouses'
 import MoneyManagement from './pages/money/MoneyManagement'
+import AssetManagement from './pages/assets/AssetManagement'
 import Settings from './pages/misc/Settings'
 import NotFound from './pages/misc/NotFound'
 
@@ -19,6 +20,7 @@ export default function App() {
 
         <Route path="reports" element={<Reports />} />
         <Route path="money" element={<MoneyManagement />} />
+        <Route path="assets" element={<AssetManagement />} />
 
         <Route path="guest-houses" element={<Navigate to="/guest-houses/nt1" replace />} />
         <Route path="guest-houses/:houseCode" element={<GuestHouses />} />

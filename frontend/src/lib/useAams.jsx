@@ -33,7 +33,18 @@ import {
   getGuesthouseRentRecords,
   upsertGuesthouseRentRecord,
   deleteGuesthouseRentRecord,
+  upsertRentElectricityFields,
 } from './rentState'
+import {
+  getElectricityBills,
+  getElectricitySettings,
+  upsertElectricityBillRecord,
+  updateUnitsAllotted,
+  updateRatePerUnit,
+  addPayment,
+  setDefaultRate,
+  bulkImportElectricityBills,
+} from './electricityBillState'
 
 const AamsContext = createContext(null)
 
@@ -237,6 +248,64 @@ export function AamsProvider({ children }) {
     return getResidentialRoomGuestHistory(buildingCode, roomNo)
   }
 
+  const updateRentUnitsUsed = (buildingCode, roomNo, residentName, month, year, unitsUsed) => {
+    const record = upsertRentElectricityFields(buildingCode, roomNo, residentName, month, year, { unitsUsed })
+    setRentRecords(getRentRecords())
+    return record
+  }
+
+  const updateRentElectricityPaid = (buildingCode, roomNo, residentName, month, year, electricityBillPaid) => {
+    const record = upsertRentElectricityFields(buildingCode, roomNo, residentName, month, year, { electricityBillPaid })
+    setRentRecords(getRentRecords())
+    return record
+  }
+
+  // ─── Electricity Bill Management (independent table) ────────────────────
+  const [electricityBills, setElectricityBills] = useState(getElectricityBills())
+  const [electricitySettings, setElectricitySettingsState] = useState(getElectricitySettings())
+
+  const refreshElectricityBills = () => {
+    setElectricityBills(getElectricityBills())
+    setElectricitySettingsState(getElectricitySettings())
+  }
+
+  const saveElectricityBillRecord = (payload) => {
+    const record = upsertElectricityBillRecord(payload)
+    setElectricityBills(getElectricityBills())
+    return record
+  }
+
+  const updateElectricityUnitsAllotted = (buildingCode, roomNo, value) => {
+    const record = updateUnitsAllotted(buildingCode, roomNo, value)
+    setElectricityBills(getElectricityBills())
+    return record
+  }
+
+  const updateElectricityRate = (buildingCode, roomNo, rate) => {
+    const record = updateRatePerUnit(buildingCode, roomNo, rate)
+    setElectricityBills(getElectricityBills())
+    return record
+  }
+
+  const addElectricityPayment = (buildingCode, roomNo, amount, date, note) => {
+    const record = addPayment(buildingCode, roomNo, amount, date, note)
+    setElectricityBills(getElectricityBills())
+    return record
+  }
+
+  // Only affects new records going forward — existing per-record rates are untouched.
+  const updateGlobalElectricityRate = (rate) => {
+    const settings = setDefaultRate(rate)
+    setElectricitySettingsState(settings)
+    return settings
+  }
+
+  const importElectricityBills = (records) => {
+    const saved = bulkImportElectricityBills(records)
+    setElectricityBills(getElectricityBills())
+    return saved
+  }
+
   const value = {
     residentialNT1,
     residentialNT2,
@@ -272,6 +341,19 @@ export function AamsProvider({ children }) {
     saveGuesthouseRentRecord,
     removeGuesthouseRentRecord,
     refreshRent,
+    // Electricity billing (per resident, per month)
+    updateRentUnitsUsed,
+    updateRentElectricityPaid,
+    // Electricity Bill Management (independent table)
+    electricityBills,
+    electricitySettings,
+    saveElectricityBillRecord,
+    updateElectricityUnitsAllotted,
+    updateElectricityRate,
+    addElectricityPayment,
+    updateGlobalElectricityRate,
+    importElectricityBills,
+    refreshElectricityBills,
     // History
     getRoomGuestHistory,
   }

@@ -7,10 +7,11 @@ import GuestRoomModal from '../../components/GuestRoomModal'
 import GuestBookingModal from '../../components/GuestBookingModal'
 import GuestHouseMapModal from '../../components/GuestHouseMapModal'
 import SmartExportModal from '../../components/SmartExportModal'
+import RoomHistoryModal from '../../components/RoomHistoryModal'
 import { IMAGES } from '../../constants/images'
 import { useAams } from '../../lib/useAams'
 
-function InventoryRow({ floor, roomNo, furniture, status, activeBooking, onManage, onMarkClean }) {
+function InventoryRow({ floor, roomNo, furniture, status, activeBooking, onManage, onMarkClean, onViewHistory }) {
   let badgeStyle = ''
   let dotColor = ''
   if (status === 'Available') {
@@ -33,7 +34,15 @@ function InventoryRow({ floor, roomNo, furniture, status, activeBooking, onManag
   return (
     <tr className="transition-colors hover:bg-surface-container-low/30">
       <td className="px-lg py-4 text-body-md text-on-surface-variant">{floor}</td>
-      <td className="px-lg py-4 text-body-md font-bold text-primary">{roomNo}</td>
+      <td className="px-lg py-4 text-body-md font-bold text-primary">
+        <button
+          type="button"
+          onClick={() => onViewHistory(roomNo)}
+          className="font-bold text-primary hover:text-primary-container hover:underline decoration-dashed underline-offset-4 cursor-pointer text-left"
+        >
+          {roomNo}
+        </button>
+      </td>
       <td className="px-lg py-4">
         <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold mr-3 ${badgeStyle}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
@@ -119,6 +128,8 @@ export default function GuestHouses() {
   const [bookingModalOpen, setBookingModalOpen] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyRoomNo, setHistoryRoomNo] = useState('')
 
   const itemsPerPage = 5
 

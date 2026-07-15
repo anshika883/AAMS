@@ -6,6 +6,7 @@ import Icon from '../../components/Icon'
 import FlatManageModal from '../../components/FlatManageModal'
 import BuildingMapModal from '../../components/BuildingMapModal'
 import SmartExportModal from '../../components/SmartExportModal'
+import RoomHistoryModal from '../../components/RoomHistoryModal'
 import { useAams } from '../../lib/useAams'
 
 function getBaseRoom(roomNo) {
@@ -30,6 +31,8 @@ export default function BuildingInventory() {
   const [expandedRooms, setExpandedRooms] = useState(new Set())
   const [sortBy, setSortBy] = useState('asc') // 'asc' | 'desc'
   const [exportOpen, setExportOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyRoomNo, setHistoryRoomNo] = useState('')
 
   const units = useMemo(() => {
     return code === 'NT2' ? residentialNT2 : residentialNT1
@@ -271,6 +274,10 @@ export default function BuildingInventory() {
                       totalCount={totalCount}
                       code={code}
                       onManage={(u) => setSelectedUnit({ ...u, buildingCode: code })}
+                      onViewHistory={(roomNo) => {
+                        setHistoryRoomNo(roomNo)
+                        setHistoryOpen(true)
+                      }}
                     />
                   )
                 })}
@@ -291,7 +298,16 @@ export default function BuildingInventory() {
                       <td className="px-6 py-4 text-sm font-medium text-on-surface-variant">Floor {u.floor}</td>
                       <td className="px-6 py-4 text-sm font-bold text-on-surface">
                         <span className="flex items-center gap-2">
-                          {u.roomNo}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHistoryRoomNo(u.roomNo)
+                              setHistoryOpen(true)
+                            }}
+                            className="font-bold text-primary hover:text-primary-container hover:underline decoration-dashed underline-offset-4 cursor-pointer text-left"
+                          >
+                            {u.roomNo}
+                          </button>
                           {isGH && <span className="text-[10px] font-bold text-purple-600 bg-purple-100 border border-purple-200 rounded px-1.5 py-0.5">GH</span>}
                         </span>
                       </td>
@@ -365,13 +381,20 @@ export default function BuildingInventory() {
           { key: 'furniture', label: 'Furniture Inventory' },
         ]}
       />
+
+      <RoomHistoryModal
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        roomNo={historyRoomNo}
+        isGuesthouse={units.find(u => u.roomNo === historyRoomNo)?.isGuesthouse || false}
+      />
     </>
   )
 }
 
 // ─── Grouped Table Rows (parent + expandable children) ────────────────
 
-function GroupedTableRows({ group, isExpanded, onToggle, statusLabel, statusClass, dotClass, baseLabel, depts, names, totalCount, code, onManage }) {
+function GroupedTableRows({ group, isExpanded, onToggle, statusLabel, statusClass, dotClass, baseLabel, depts, names, totalCount, code, onManage, onViewHistory }) {
   return (
     <>
       {/* Parent Row */}
@@ -384,7 +407,16 @@ function GroupedTableRows({ group, isExpanded, onToggle, statusLabel, statusClas
         <td className="px-6 py-4 text-sm font-medium text-on-surface-variant">Floor {group.floor}</td>
         <td className="px-6 py-4 text-sm font-bold text-on-surface">
           <span className="flex items-center gap-1.5">
-            {baseLabel}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onViewHistory(group.baseKey)
+              }}
+              className="font-bold text-primary hover:text-primary-container hover:underline decoration-dashed underline-offset-4 cursor-pointer"
+            >
+              {baseLabel}
+            </button>
             <span className="text-[10px] font-semibold text-secondary bg-surface-container rounded px-1.5 py-0.5">
               {group.subUnits.length} units
             </span>
@@ -425,7 +457,13 @@ function GroupedTableRows({ group, isExpanded, onToggle, statusLabel, statusClas
             <td className="px-6 py-3 text-sm text-on-surface">
               <span className="flex items-center gap-2">
                 <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ${subDotClass}`}>{suffix}</span>
-                <span className="font-semibold">{u.roomNo}</span>
+                <button
+                  type="button"
+                  onClick={() => onViewHistory(u.roomNo)}
+                  className="font-semibold text-primary hover:text-primary-container hover:underline decoration-dashed underline-offset-4 cursor-pointer text-left"
+                >
+                  {u.roomNo}
+                </button>
               </span>
             </td>
             <td className="px-6 py-3 text-sm text-on-surface-variant font-medium">{u.residentName}</td>

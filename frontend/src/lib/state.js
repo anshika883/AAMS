@@ -184,12 +184,37 @@ function setJson(key, val) {
 // API for residential
 export function getResidentialUnits(buildingCode = 'NT1') {
   const code = buildingCode.toUpperCase()
-  return getJson(`aams_residential_${code}`, [])
+  const units = getJson(`aams_residential_${code}`, [])
+  const bookings = getJson('aams_guest_bookings', [])
+
+  return units.map((u) => {
+    if (u.isGuesthouse) {
+      // Find active check-in/booking for this room in guest house bookings
+      const activeBooking = bookings.find(
+        (b) => b.roomNo === u.roomNo && b.bookingStatus === 'Occupied'
+      )
+      if (activeBooking) {
+        return {
+          ...u,
+          occupancy: 'Occupied',
+          residentName: activeBooking.guestName,
+          deptt: activeBooking.guestStatus || 'GH Guest',
+        }
+      } else {
+        return {
+          ...u,
+          occupancy: 'Vacant',
+          residentName: '-',
+        }
+      }
+    }
+    return u
+  })
 }
 
 export function updateResidentialUnit(buildingCode, roomNo, updatedFields) {
   const code = buildingCode.toUpperCase()
-  const units = getResidentialUnits(code)
+  const units = getJson(`aams_residential_${code}`, [])
   
   let oldUnit = null
   const updatedUnits = units.map((u) => {
@@ -762,6 +787,20 @@ export function importResidentialAndFurniture(nt1Data, nt2Data, newFurniture) {
     const merged = Array.from(new Set([...existingLib, ...newFurniture]))
     setJson('aams_furniture_library', merged)
   }
+
+  // Extract and save rent rates
+  const rentRates = getJson('aams_custom_rent_rates', {})
+  const saveRates = (units, building) => {
+    units.forEach((u) => {
+      if (u.rentRate !== undefined && u.occupancy === 'Occupied' && u.residentName && u.residentName !== '-') {
+        const key = `${building}_${u.roomNo}_${u.residentName}`
+        rentRates[key] = parseFloat(u.rentRate) || 0
+      }
+    })
+  }
+  if (nt1Data) saveRates(nt1Data, 'NT1')
+  if (nt2Data) saveRates(nt2Data, 'NT2')
+  setJson('aams_custom_rent_rates', rentRates)
 
   const gh1 = nt1Data.filter((u) => u.isGuesthouse).length
   const gh2 = nt2Data.filter((u) => u.isGuesthouse).length

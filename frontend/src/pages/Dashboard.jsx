@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Page from '../components/Page'
 import TopBar from '../components/TopBar'
 import Icon from '../components/Icon'
@@ -26,8 +26,16 @@ export default function Dashboard() {
   const [auditOpen, setAuditOpen] = useState(false)
   const [selectedUnit, setSelectedUnit] = useState(null)
   
-  // Dashboard Search state
-  const [searchQuery, setSearchQuery] = useState('')
+  // Dashboard Search state synced with URL search params
+  const [searchParams, setSearchParams] = useSearchParams()
+  const searchQuery = searchParams.get('search') || ''
+  const setSearchQuery = (val) => {
+    if (val) {
+      setSearchParams({ search: val })
+    } else {
+      setSearchParams({})
+    }
+  }
 
   // Search text inside Audit Log modal
   const [auditSearch, setAuditSearch] = useState('')

@@ -81,8 +81,47 @@ export function AamsProvider({ children }) {
   }, [settings.autoSync, settings.syncInterval])
 
   const updateResidential = (building, roomNo, fields) => {
-    updateResidentialUnit(building, roomNo, fields)
+    const { rentRate, paymentStatus, amountPaid, notes, ...unitFields } = fields
+    updateResidentialUnit(building, roomNo, unitFields)
+
+    if (unitFields.occupancy === 'Occupied') {
+      const residentName = unitFields.residentName || 'Guest'
+      if (rentRate !== undefined) {
+        saveCustomRentRate(building, roomNo, residentName, rentRate)
+      }
+      if (paymentStatus !== undefined) {
+        const month = new Date().getMonth() + 1
+        const year = new Date().getFullYear()
+
+        const prevMonth = month === 1 ? 12 : month - 1
+        const prevYear = month === 1 ? year - 1 : year
+        const prevRecord = getRentRecords().find(
+          (r) =>
+            r.buildingCode === building &&
+            r.roomNo === roomNo &&
+            r.month === prevMonth &&
+            r.year === prevYear
+        )
+        const carryForwardAmount = prevRecord ? prevRecord.balance : 0
+
+        upsertRentRecord({
+          buildingCode: building,
+          roomNo,
+          residentName,
+          month,
+          year,
+          rentAmount: parseFloat(rentRate) || 0,
+          carryForwardAmount,
+          amountPaid: parseFloat(amountPaid) || 0,
+          status: paymentStatus,
+          paidDate: new Date().toISOString().split('T')[0],
+          notes: notes || '',
+        })
+      }
+    }
+
     refresh()
+    refreshRent()
   }
 
   const updateGuestHouse = (house, roomNo, fields) => {
@@ -151,6 +190,7 @@ export function AamsProvider({ children }) {
     syncGuesthouseResidentialToGuestRooms('NT1')
     syncGuesthouseResidentialToGuestRooms('NT2')
     refresh()
+    refreshRent()
   }
 
   // ─── Rent Management ─────────────────────────────────────────────────────

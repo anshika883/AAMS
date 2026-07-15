@@ -3,7 +3,7 @@ import Icon from './Icon'
 import { useAams } from '../lib/useAams'
 
 export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
-  const { furnitureLibrary, addFurniture } = useAams()
+  const { furnitureLibrary, addFurniture, customRentRates, rentRecords } = useAams()
 
   const [residentName, setResidentName] = useState('')
   const [occupancy, setOccupancy] = useState('Vacant')
@@ -12,6 +12,13 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
   const [selectedFurniture, setSelectedFurniture] = useState([])
   const [furnitureInput, setFurnitureInput] = useState('')
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+
+  // Rent states
+  const [rentRate, setRentRate] = useState(0)
+  const [paymentStatus, setPaymentStatus] = useState('Unpaid')
+  const [amountPaid, setAmountPaid] = useState(0)
+  const [rentNotes, setRentNotes] = useState('')
+  const [carryForward, setCarryForward] = useState(0)
 
   useEffect(() => {
     if (unit) {
@@ -26,8 +33,50 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
         ? unit.furniture.split(',').map((f) => f.trim())
         : []
       setSelectedFurniture(currentFurniture)
+
+      // Fetch rent info for current month if it is NOT a guesthouse
+      if (!unit.isGuesthouse) {
+        const currentMonth = new Date().getMonth() + 1
+        const currentYear = new Date().getFullYear()
+
+        const rateKey = `${unit.buildingCode}_${unit.roomNo}_${unit.residentName}`
+        const savedRate = customRentRates ? (customRentRates[rateKey] || 0) : 0
+
+        // Find current record
+        const record = rentRecords ? rentRecords.find(
+          (r) =>
+            r.buildingCode === unit.buildingCode &&
+            r.roomNo === unit.roomNo &&
+            r.month === currentMonth &&
+            r.year === currentYear
+        ) : null
+
+        // Find carry forward from previous month
+        const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1
+        const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear
+        const prevRecord = rentRecords ? rentRecords.find(
+          (r) =>
+            r.buildingCode === unit.buildingCode &&
+            r.roomNo === unit.roomNo &&
+            r.month === prevMonth &&
+            r.year === prevYear
+        ) : null
+        const carryAmount = prevRecord ? prevRecord.balance : 0
+        setCarryForward(carryAmount)
+
+        const initialRent = record ? record.rentAmount : (unit.rentRate || savedRate)
+        setRentRate(initialRent)
+        
+        const initialStatus = record ? record.status : 'Unpaid'
+        setPaymentStatus(initialStatus)
+
+        const initialPaid = record ? record.amountPaid : 0
+        setAmountPaid(initialPaid)
+
+        setRentNotes(record ? record.notes : '')
+      }
     }
-  }, [unit])
+  }, [unit, customRentRates, rentRecords])
 
   if (!isOpen || !unit) return null
 
@@ -47,14 +96,19 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
       deptt: deptt.trim(),
       occupantCount: parseInt(occupantCount, 10) || 0,
       furniture: furnitureStr,
+      // Rent fields:
+      rentRate: parseFloat(rentRate) || 0,
+      paymentStatus,
+      amountPaid: parseFloat(amountPaid) || 0,
+      notes: rentNotes,
     })
     onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm">
-      <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-2xl transition-all duration-300 flex flex-col" style={{ width: '450px', maxWidth: '95vw' }}>
-        <div className="flex items-center justify-between border-b border-outline-variant bg-surface-container px-6 py-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm animate-fade-in">
+      <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-2xl transition-all duration-300 flex flex-col" style={{ width: '460px', maxWidth: '95vw' }}>
+        <div className="flex items-center justify-between border-b border-outline-variant bg-surface-container px-6 py-4 shrink-0">
           <div className="flex items-center gap-2">
             <Icon name="edit_square" className="text-primary" />
             <h3 className="text-headline-sm font-headline-sm text-on-surface">
@@ -64,13 +118,26 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+            className="rounded-full p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface cursor-pointer"
           >
             <Icon name="close" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto max-h-[75vh]">
+          {/* Guesthouse Banner warning */}
+          {unit.isGuesthouse && (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-xs text-purple-950 flex gap-2.5 items-start">
+              <Icon name="info" className="text-purple-600 shrink-0 text-base mt-0.5" />
+              <div>
+                <strong className="font-bold block text-purple-900">Guesthouse Room</strong>
+                <p className="mt-1 text-secondary leading-relaxed">
+                  Occupancy and resident details are dynamically synced and managed via bookings under the Guest Houses tab. Manual overrides here are disabled.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Active Guest stays for Guesthouse */}
           {unit.isGuesthouse && (
             <GuesthouseStaySummary roomNo={unit.roomNo} />
@@ -82,24 +149,26 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
+                disabled={unit.isGuesthouse}
                 onClick={() => handleStatusChange('Occupied')}
                 className={`flex items-center justify-center gap-2 rounded-lg border py-3 font-bold transition-all ${
                   occupancy === 'Occupied'
                     ? 'border-[#22c55e] bg-[#f0fdf4] text-[#15803d]'
                     : 'border-outline-variant hover:bg-surface-container-low text-secondary'
-                }`}
+                } ${unit.isGuesthouse ? 'opacity-65 cursor-not-allowed bg-surface-container-low/30' : 'cursor-pointer'}`}
               >
                 <span className={`h-2.5 w-2.5 rounded-full ${occupancy === 'Occupied' ? 'bg-[#22c55e]' : 'bg-outline'}`} />
                 Occupied
               </button>
               <button
                 type="button"
+                disabled={unit.isGuesthouse}
                 onClick={() => handleStatusChange('Vacant')}
                 className={`flex items-center justify-center gap-2 rounded-lg border py-3 font-bold transition-all ${
                   occupancy === 'Vacant'
                     ? 'border-primary bg-primary-container/10 text-primary'
                     : 'border-outline-variant hover:bg-surface-container-low text-secondary'
-                }`}
+                } ${unit.isGuesthouse ? 'opacity-65 cursor-not-allowed bg-surface-container-low/30' : 'cursor-pointer'}`}
               >
                 <span className={`h-2.5 w-2.5 rounded-full ${occupancy === 'Vacant' ? 'bg-primary' : 'bg-outline'}`} />
                 Vacant
@@ -120,10 +189,11 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
                     type="text"
                     id="residentName"
                     required
+                    disabled={unit.isGuesthouse}
                     placeholder="Enter full name of the resident"
                     value={residentName}
                     onChange={(e) => setResidentName(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface px-4 py-2.5 pl-10 text-body-md focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    className={`w-full rounded-lg border border-outline-variant bg-surface px-4 py-2.5 pl-10 text-body-md focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 ${unit.isGuesthouse ? 'bg-surface-container-low/40 cursor-not-allowed opacity-80' : ''}`}
                   />
                 </div>
               </div>
@@ -135,10 +205,11 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
                   <input
                     type="text"
                     id="deptt"
+                    disabled={unit.isGuesthouse}
                     placeholder="e.g. IT, Nurse, F&B"
                     value={deptt}
                     onChange={(e) => setDeptt(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface px-4 py-2.5 text-body-md focus:border-primary focus:outline-none"
+                    className={`w-full rounded-lg border border-outline-variant bg-surface px-4 py-2.5 text-body-md focus:border-primary focus:outline-none ${unit.isGuesthouse ? 'bg-surface-container-low/40 cursor-not-allowed opacity-80' : ''}`}
                   />
                 </div>
                 <div className="space-y-2">
@@ -149,11 +220,103 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
                     type="number"
                     id="occupantCount"
                     min="0"
+                    disabled={unit.isGuesthouse}
                     value={occupantCount}
                     onChange={(e) => setOccupantCount(e.target.value)}
-                    className="w-full rounded-lg border border-outline-variant bg-surface px-4 py-2.5 text-body-md focus:border-primary focus:outline-none"
+                    className={`w-full rounded-lg border border-outline-variant bg-surface px-4 py-2.5 text-body-md focus:border-primary focus:outline-none ${unit.isGuesthouse ? 'bg-surface-container-low/40 cursor-not-allowed opacity-80' : ''}`}
                   />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Rent details for non-guesthouse occupied flats */}
+          {!unit.isGuesthouse && occupancy === 'Occupied' && (
+            <div className="border-t border-outline-variant/60 pt-4 space-y-4">
+              <h4 className="text-xs uppercase font-bold text-primary tracking-wider flex items-center gap-1.5">
+                <Icon name="payments" className="text-sm" /> Rent &amp; Payment Status (Current Month)
+              </h4>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-label-sm uppercase tracking-wider text-secondary">Rent Amount (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={rentRate}
+                    onChange={(e) => {
+                      const newRate = parseFloat(e.target.value) || 0
+                      setRentRate(e.target.value)
+                      if (paymentStatus === 'Paid') {
+                        setAmountPaid(newRate + carryForward)
+                      }
+                    }}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-label-sm uppercase tracking-wider text-secondary">Owed from Prev Month</label>
+                  <div className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-[#b91c1c] font-bold">
+                    ₹{carryForward}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-label-sm uppercase tracking-wider text-secondary block font-bold">Payment Status</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['Paid', 'Partial', 'Unpaid'].map((statusOption) => (
+                    <button
+                      key={statusOption}
+                      type="button"
+                      onClick={() => {
+                        setPaymentStatus(statusOption)
+                        const rateNum = parseFloat(rentRate) || 0
+                        const total = rateNum + carryForward
+                        if (statusOption === 'Paid') {
+                          setAmountPaid(total)
+                        } else if (statusOption === 'Unpaid') {
+                          setAmountPaid(0)
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all cursor-pointer text-center ${
+                        paymentStatus === statusOption
+                          ? 'bg-primary border-primary text-on-primary shadow-xs'
+                          : 'bg-white border-outline-variant text-secondary hover:bg-surface-container-low'
+                      }`}
+                    >
+                      {statusOption}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {paymentStatus === 'Partial' && (
+                <div className="space-y-1">
+                  <label className="text-label-sm uppercase tracking-wider text-secondary">Amount Paid (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={(parseFloat(rentRate) || 0) + carryForward}
+                    value={amountPaid}
+                    onChange={(e) => setAmountPaid(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                    required
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-label-sm uppercase tracking-wider text-secondary">Rent Notes</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Paid cash, check pending..."
+                  value={rentNotes}
+                  onChange={(e) => setRentNotes(e.target.value)}
+                  className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                />
               </div>
             </div>
           )}
@@ -278,17 +441,17 @@ export default function FlatManageModal({ isOpen, onClose, unit, onSave }) {
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant">
+          <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-outline-variant px-5 py-2.5 text-label-md font-bold text-secondary transition-colors hover:bg-surface-container"
+              className="rounded-lg border border-outline-variant px-5 py-2.5 text-label-md font-bold text-secondary transition-colors hover:bg-surface-container cursor-pointer bg-white"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-primary px-5 py-2.5 text-label-md font-bold text-on-primary shadow-md hover:bg-primary-container transition-colors"
+              className="rounded-lg bg-primary px-5 py-2.5 text-label-md font-bold text-on-primary shadow-md hover:bg-primary-container transition-colors cursor-pointer"
             >
               Save Details
             </button>
@@ -352,4 +515,3 @@ function GuesthouseStaySummary({ roomNo }) {
     </div>
   )
 }
-

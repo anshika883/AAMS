@@ -235,10 +235,18 @@ export default function MoneyManagement() {
     const totalDue = parsedRent + carryForward
 
     let finalAmountPaid = parseFloat(amountPaidInput) || 0
-    if (paymentStatusInput === 'Paid') {
-      finalAmountPaid = totalDue
-    } else if (paymentStatusInput === 'Unpaid') {
+    if (paymentStatusInput === 'Unpaid') {
       finalAmountPaid = 0
+    }
+
+    // If the resident paid more than what's due, the management owes them
+    // the difference back — reflect that as an "Overpaid" status rather
+    // than silently forcing amountPaid down to totalDue.
+    let finalStatus = paymentStatusInput
+    if (finalAmountPaid > totalDue) {
+      finalStatus = 'Overpaid'
+    } else if (paymentStatusInput === 'Paid') {
+      finalAmountPaid = totalDue
     }
 
     saveRentRecord({
@@ -250,7 +258,7 @@ export default function MoneyManagement() {
       rentAmount: parsedRent,
       carryForwardAmount: carryForward,
       amountPaid: finalAmountPaid,
-      status: paymentStatusInput,
+      status: finalStatus,
       paidDate: new Date().toISOString().split('T')[0],
       notes: notesInput,
     })
@@ -270,13 +278,19 @@ export default function MoneyManagement() {
     e.preventDefault()
     if (!selectedBooking) return
 
+    const amount = parseFloat(ghAmountInput) || 0
+    const amountPaid = parseFloat(ghAmountPaidInput) || 0
+    // Guest paid more than the total charge — the difference is owed back to them.
+    const status = amountPaid > amount ? 'Overpaid' : amountPaid === amount && amount > 0 ? 'Paid' : amountPaid > 0 ? 'Partial' : 'Unpaid'
+
     saveGuesthouseRentRecord({
       houseCode: selectedBooking.roomNo.startsWith('N2') ? 'NT2' : 'NT1',
       roomNo: selectedBooking.roomNo,
       guestName: selectedBooking.guestName,
       bookingId: selectedBooking.id,
-      amount: parseFloat(ghAmountInput) || 0,
-      amountPaid: parseFloat(ghAmountPaidInput) || 0,
+      amount,
+      amountPaid,
+      status,
       paidDate: new Date().toISOString().split('T')[0],
       notes: ghNotesInput,
       month: selectedMonth,
@@ -477,11 +491,19 @@ export default function MoneyManagement() {
                       <td className="px-6 py-4 text-sm text-[#b91c1c] font-medium">₹{row.carryForwardAmount}</td>
                       <td className="px-6 py-4 text-sm font-bold">₹{row.totalDue}</td>
                       <td className="px-6 py-4 text-sm text-[#15803d] font-bold">₹{row.amountPaid}</td>
-                      <td className="px-6 py-4 text-sm font-bold">₹{row.balance}</td>
+                      <td className="px-6 py-4 text-sm font-bold">
+                        {row.balance < 0 ? (
+                          <span className="text-[#1d4ed8]">₹{Math.abs(row.balance)} refund due</span>
+                        ) : (
+                          `₹${row.balance}`
+                        )}
+                      </td>
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                            row.status === 'Paid'
+                            row.status === 'Overpaid'
+                              ? 'bg-[#dbeafe] text-[#1d4ed8]'
+                              : row.status === 'Paid'
                               ? 'bg-[#dcfce7] text-[#15803d]'
                               : row.status === 'Partial'
                               ? 'bg-[#fef9c3] text-[#a16207]'
@@ -549,11 +571,19 @@ export default function MoneyManagement() {
                       </td>
                       <td className="px-6 py-4 text-sm font-bold">₹{row.amount}</td>
                       <td className="px-6 py-4 text-sm text-[#15803d] font-bold">₹{row.amountPaid}</td>
-                      <td className="px-6 py-4 text-sm font-bold text-[#b91c1c]">₹{row.balance}</td>
+                      <td className="px-6 py-4 text-sm font-bold">
+                        {row.balance < 0 ? (
+                          <span className="text-[#1d4ed8]">₹{Math.abs(row.balance)} refund due</span>
+                        ) : (
+                          <span className="text-[#b91c1c]">₹{row.balance}</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                            row.status === 'Paid'
+                            row.status === 'Overpaid'
+                              ? 'bg-[#dbeafe] text-[#1d4ed8]'
+                              : row.status === 'Paid'
                               ? 'bg-[#dcfce7] text-[#15803d]'
                               : row.status === 'Partial'
                               ? 'bg-[#fef9c3] text-[#a16207]'
@@ -667,7 +697,6 @@ export default function MoneyManagement() {
                 <input
                   type="number"
                   min="0"
-                  max={(parseFloat(rentAmountInput) || 0) + selectedUnit.carryForwardAmount}
                   value={amountPaidInput}
                   disabled={paymentStatusInput !== 'Partial'}
                   onChange={(e) => setAmountPaidInput(e.target.value)}
@@ -688,10 +717,20 @@ export default function MoneyManagement() {
                   </span>
                 </div>
                 <div>
-                  <span className="text-secondary">Outstanding Balance: </span>
-                  <span className="font-bold text-[#b91c1c]">
-                    ₹{((parseFloat(rentAmountInput) || 0) + selectedUnit.carryForwardAmount) - (parseFloat(amountPaidInput) || 0)}
-                  </span>
+                  {(() => {
+                    const bal = ((parseFloat(rentAmountInput) || 0) + selectedUnit.carryForwardAmount) - (parseFloat(amountPaidInput) || 0)
+                    return bal < 0 ? (
+                      <>
+                        <span className="text-secondary">Refund Due to Resident: </span>
+                        <span className="font-bold text-[#1d4ed8]">₹{Math.abs(bal)}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-secondary">Outstanding Balance: </span>
+                        <span className="font-bold text-[#b91c1c]">₹{bal}</span>
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
 
@@ -775,12 +814,21 @@ export default function MoneyManagement() {
                 <input
                   type="number"
                   min="0"
-                  max={ghAmountInput}
                   value={ghAmountPaidInput}
                   onChange={(e) => setGhAmountPaidInput(e.target.value)}
                   className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm focus:outline-none"
                 />
               </div>
+
+              {(() => {
+                const bal = (parseFloat(ghAmountInput) || 0) - (parseFloat(ghAmountPaidInput) || 0)
+                if (bal >= 0) return null
+                return (
+                  <div className="text-xs bg-[#dbeafe] text-[#1d4ed8] rounded-lg px-3 py-2 font-bold">
+                    Guest overpaid — ₹{Math.abs(bal)} refund due
+                  </div>
+                )
+              })()}
 
               <div className="space-y-1">
                 <label className="text-xs font-bold text-secondary">Notes / Remarks</label>

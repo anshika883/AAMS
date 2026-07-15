@@ -26,7 +26,7 @@ export function parseAamsExcel(file) {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target.result)
-        const workbook = XLSX.read(data, { type: 'array' })
+        const workbook = XLSX.read(data, { type: 'array', cellStyles: true })
 
         // Use first sheet (the main booking sheet)
         const sheetName = workbook.SheetNames[0]
@@ -39,7 +39,7 @@ export function parseAamsExcel(file) {
         for (let i = 0; i < Math.min(json.length, 50); i++) {
           const row = json[i]
           if (!row) continue
-          if (row.some(cell => String(cell).trim().toLowerCase() === 'flat')) {
+          if (row.some(cell => String(cell).trim().toLowerCase() === 'flat' || String(cell).trim().toLowerCase() === 'flat no.')) {
             headerRowIdx = i
             break
           }
@@ -55,13 +55,15 @@ export function parseAamsExcel(file) {
         // Determine column indices dynamically from the header row
         const headerRow = json[headerRowIdx].map(h => String(h ?? '').trim())
 
-        const flatIdx = headerRow.findIndex(h => h.toLowerCase() === 'flat')
+        const flatIdx = findColIndex(headerRow, ['flat', 'flat no.', 'flat no'], 0)
         // Department column: immediately after flat, or labelled
         const deptIdx = findColIndex(headerRow, ['deptt', 'dept', 'department'], flatIdx + 1)
         // Name column
         const nameIdx = findColIndex(headerRow, ['name', 'resident', 'occupant'], deptIdx !== -1 ? deptIdx + 1 : flatIdx + 1)
         // People count is typically the column right after Name (may be unlabelled)
         const countIdx = nameIdx !== -1 ? nameIdx + 1 : -1
+        // Rent column
+        const rentIdx = findColIndex(headerRow, ['monthly rent', 'rent', 'monthly rent (₹)*'], -1)
         // Furniture & Fixtures column
         const furnFixIdx = findColIndex(headerRow, ['furni&fix', 'furni & fix', 'furniture', 'furniture & fixtures', 'furniture&fixtures'], countIdx !== -1 ? countIdx + 1 : flatIdx + 2)
         // Extra beds/furniture detail column (one after Furni&Fix)
@@ -115,6 +117,8 @@ export function parseAamsExcel(file) {
           const dept = deptIdx !== -1 ? cleanCell(row[deptIdx]) : ''
           const name = nameIdx !== -1 ? cleanCell(row[nameIdx]) : ''
           const peopleCount = countIdx !== -1 ? parseCount(row[countIdx]) : 0
+          const rentVal = rentIdx !== -1 ? row[rentIdx] : ''
+          const rentRate = parseFloat(String(rentVal).replace(/[^\d.]/g, '')) || 0
           const furnFix = furnFixIdx !== -1 ? cleanCell(row[furnFixIdx]) : ''
           const bedsDetail = bedsIdx !== -1 ? cleanCell(row[bedsIdx]) : ''
 
@@ -149,9 +153,23 @@ export function parseAamsExcel(file) {
           // Build combined furniture string — preserve brackets like (RPS), (Metal), (NCO)
           const furnitureStr = buildFurnitureString(furnFix, bedsDetail, doctorFurnItems, allFurnitureItems)
 
+          // Guesthouse detection: check cell color in Column A (Flat)
+          const cellAddress = XLSX.utils.encode_cell({ r: i, c: flatIdx })
+          const cellObj = worksheet[cellAddress]
+          let isGuesthouseColor = false
+          if (cellObj && cellObj.s && cellObj.s.fill) {
+            const fill = cellObj.s.fill
+            if (fill.fgColor && fill.fgColor.rgb) {
+              const rgb = String(fill.fgColor.rgb).toUpperCase().replace(/^FF/, '')
+              if (rgb === 'C6EFCE') {
+                isGuesthouseColor = true
+              }
+            }
+          }
+
           const lowerDept = dept.toLowerCase().trim()
           const lowerName = name.toLowerCase().trim()
-          const isGuesthouse = 
+          const isGuesthouseText = 
             lowerDept === 'gh' || 
             lowerDept === 'guest house' || 
             lowerDept === 'guesthouse' ||
@@ -164,6 +182,8 @@ export function parseAamsExcel(file) {
             lowerName === 'guesthouse' ||
             lowerName === 'guest'
 
+          const isGuesthouse = isGuesthouseColor || isGuesthouseText
+
           const unit = {
             floor: floorNum,
             roomNo: flatRaw.toUpperCase().replace('–', '-'),
@@ -173,6 +193,7 @@ export function parseAamsExcel(file) {
             occupantCount: peopleCount,
             furniture: furnitureStr || 'NIL',
             isGuesthouse,
+            rentRate,
           }
 
           if (towerNum === '1') {
